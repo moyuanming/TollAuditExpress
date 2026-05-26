@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+
+# Build
+dist/
+build/
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Database
+*.db
+*.db-journal
+
+# Cache
+.cache/
+.temp/

@@ -1,0 +1,15 @@
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test
+.env.test.local
+
+# Local credentials or generated config
+config/secrets.json
+
+# Browser auth state for end-to-end tests
+tests/e2e/.auth
+
+# Local database artifacts if the project uses them
+apps/api/database/local/
