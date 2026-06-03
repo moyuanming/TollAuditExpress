@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { auditApi } from '../api/audit'
 
 function Dashboard() {
@@ -6,6 +6,11 @@ function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [aggregating, setAggregating] = useState(false)
   const [progress, setProgress] = useState(null)
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [])
 
   useEffect(() => {
     loadStats()
@@ -24,24 +29,28 @@ function Dashboard() {
 
   async function startAggregation() {
     setAggregating(true)
+    setProgress(null)
     try {
       const result = await auditApi.aggregateTrips({ days: 7, limit: 100 })
-      const interval = setInterval(async () => {
+      const poll = async () => {
         try {
-          const status = await fetch(`/api/audit/trips/aggregate/${result.task_id}`).then(r => r.json())
+          const status = await auditApi.getAggregationStatus(result.task_id)
           setProgress(status)
-          if (status.status === 'completed' || status.status === 'stopped') {
-            clearInterval(interval)
+          if (status.status === 'completed' || status.status === 'stopped' || status.status === 'error' || status.status === 'not_found') {
             setAggregating(false)
-            loadStats()
+            if (status.status === 'completed') loadStats()
+          } else {
+            timerRef.current = setTimeout(poll, 1000)
           }
         } catch (e) {
-          clearInterval(interval)
+          setProgress({ status: 'error', message: '无法获取聚合状态' })
           setAggregating(false)
         }
-      }, 1000)
+      }
+      poll()
     } catch (e) {
       console.error('Failed to start aggregation:', e)
+      setProgress({ status: 'error', message: '启动聚合失败' })
       setAggregating(false)
     }
   }
@@ -221,24 +230,36 @@ function Dashboard() {
 
           {progress && (
             <div style={{padding: '1rem', borderTop: '1px solid var(--border-primary)'}}>
-              <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem'}}>
-                <span style={{fontWeight: 600}}>
-                  {progress.status === 'completed' ? '✅ 聚合完成' : '🔄 聚合进行中'}
-                </span>
-                <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
-                  {progress.current || 0} / {progress.total || 0} 条
-                </span>
-              </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill"
-                  style={{ width: `${((progress.current || 0) / (progress.total || 1)) * 100}%` }}
-                />
-              </div>
-              <div style={{marginTop: '0.75rem', display: 'flex', gap: '2rem', fontSize: '0.85rem'}}>
-                <span style={{color: 'var(--accent-green)'}}>已处理: {progress.count || 0}</span>
-                <span>当前: {progress.passid || '-'}</span>
-              </div>
+              {progress.status === 'error' ? (
+                <div style={{color: 'var(--accent-red)'}}>
+                  ❌ 聚合失败: {progress.message || '未知错误'}
+                </div>
+              ) : progress.status === 'not_found' ? (
+                <div style={{color: 'var(--text-secondary)'}}>未找到聚合任务</div>
+              ) : (
+                <>
+                  <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem'}}>
+                    <span style={{fontWeight: 600}}>
+                      {progress.status === 'completed' ? '✅ 聚合完成' : '🔄 聚合进行中'}
+                    </span>
+                    <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                      {progress.total > 0
+                        ? `${progress.current || 0} / ${progress.total || 0} 条`
+                        : '正在查询源数据库...'}
+                    </span>
+                  </div>
+                  <div className="progress-bar">
+                    <div
+                      className="progress-fill"
+                      style={{ width: `${((progress.current || 0) / (progress.total || 1)) * 100}%` }}
+                    />
+                  </div>
+                  <div style={{marginTop: '0.75rem', display: 'flex', gap: '2rem', fontSize: '0.85rem'}}>
+                    <span style={{color: 'var(--accent-green)'}}>已处理: {progress.count || 0}</span>
+                    <span>当前: {progress.passid || '-'}</span>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

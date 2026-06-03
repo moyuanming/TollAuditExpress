@@ -12,12 +12,15 @@ function SuspectList() {
 
   useEffect(() => {
     loadSuspects()
-  }, [])
+  }, [filters])
 
   async function loadSuspects() {
     setLoading(true)
     try {
-      const data = await auditApi.getSuspects({ limit: 200 })
+      const params = { limit: 200 }
+      if (filters.fraudType) params.fraud_type = filters.fraudType
+      if (filters.status) params.process_status = filters.status
+      const data = await auditApi.getSuspects(params)
       setSuspects(data.suspects || [])
     } catch (e) {
       console.error('Failed to load suspects:', e)
@@ -35,11 +38,7 @@ function SuspectList() {
     }
   }
 
-  const filteredSuspects = suspects.filter(s => {
-    if (filters.fraudType && s.fraud_type !== filters.fraudType) return false
-    if (filters.status && s.process_status !== filters.status) return false
-    return true
-  })
+  const displayedSuspects = suspects
 
   return (
     <div className="page">
@@ -52,14 +51,14 @@ function SuspectList() {
           <div className="stat-mini">
             <span className="stat-mini-icon">📊</span>
             <div className="stat-mini-content">
-              <span className="stat-mini-value">{filteredSuspects.length}</span>
+              <span className="stat-mini-value">{displayedSuspects.length}</span>
               <span className="stat-mini-label">当前显示</span>
             </div>
           </div>
           <div className="stat-mini">
             <span className="stat-mini-icon">⏳</span>
             <div className="stat-mini-content">
-              <span className="stat-mini-value">{filteredSuspects.filter(s => s.process_status === 'UNPROCESSED').length}</span>
+              <span className="stat-mini-value">{displayedSuspects.filter(s => s.process_status === 'UNPROCESSED').length}</span>
               <span className="stat-mini-label">待处理</span>
             </div>
           </div>
@@ -119,7 +118,7 @@ function SuspectList() {
                       <span className="loading-spinner"></span> 加载中...
                     </td>
                   </tr>
-                ) : filteredSuspects.length === 0 ? (
+                ) : displayedSuspects.length === 0 ? (
                   <tr>
                     <td colSpan={10}>
                       <div className="empty-state">
@@ -130,7 +129,7 @@ function SuspectList() {
                     </td>
                   </tr>
                 ) : (
-                  filteredSuspects.map(s => (
+                  displayedSuspects.map(s => (
                     <tr key={s.id}>
                       <td><span className="mono">#{s.id}</span></td>
                       <td><span className="mono">{s.passid}</span></td>

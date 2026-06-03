@@ -1,14 +1,26 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import TripQuery from './pages/TripQuery'
 import SuspectList from './pages/SuspectList'
 import Statistics from './pages/Statistics'
+import TaskManager from './pages/TaskManager'
+import { onApiError } from './api/audit'
 
 function App() {
+  const [apiError, setApiError] = useState(null)
+
+  useEffect(() => {
+    return onApiError((err) => {
+      setApiError(err.message)
+      setTimeout(() => setApiError(null), 4000)
+    })
+  }, [])
+
   return (
     <BrowserRouter>
       <div className="app">
+        {apiError && <div className="error-banner">{apiError}</div>}
         <nav className="nav">
           <div className="nav-brand">
             <div className="nav-brand-icon">稽</div>
@@ -27,6 +39,9 @@ function App() {
             <NavLink to="/stats" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
               📈 统计分析
             </NavLink>
+            <NavLink to="/tasks" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
+              ⏰ 定时任务
+            </NavLink>
           </div>
         </nav>
         <main className="main">
@@ -35,6 +50,7 @@ function App() {
             <Route path="/trips" element={<TripQuery />} />
             <Route path="/suspects" element={<SuspectList />} />
             <Route path="/stats" element={<Statistics />} />
+            <Route path="/tasks" element={<TaskManager />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
