@@ -1,26 +1,19 @@
 """
 货车套用客车OBU检测服务
 检测交易记录为客车(VEHICLETYPE=1)但图片识别为货车的情况
-适配自 getmoveobu/audit/services/truck_obu_detector.py
 """
 
-import sys
 import os
+from io import BytesIO
 from typing import Dict, Optional
 
-# 添加 getmoveobu 路径以复用 ML 模型
-GETMOVEOBU_PATH = '/Users/moyuanming/getmoveobu'
-if GETMOVEOBU_PATH not in sys.path:
-    sys.path.insert(0, GETMOVEOBU_PATH)
-
-try:
-    import requests
-    from io import BytesIO
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
+from apps.api.core.config import MODEL_PATH, TRUCK_OBU_CONFIDENCE_THRESHOLD
+from apps.api.services.image_utils import download_image
+from apps.api.core.logging_config import get_logger
 
 from apps.api.core.ml.vehicle_classifier import VehicleClassifier
+
+logger = get_logger(__name__)
 
 
 class TruckOBUDetector:
@@ -28,21 +21,39 @@ class TruckOBUDetector:
 
     def __init__(self, model_path: str = None):
         if model_path is None:
-            model_path = os.path.join(GETMOVEOBU_PATH, 'best_model.pth')
+            model_path = MODEL_PATH
         self.classifier = VehicleClassifier(model_path)
 
     def download_image(self, url: str) -> Optional[BytesIO]:
         """下载图片"""
-        if not HAS_REQUESTS:
-            return None
+        return download_image(url)
 
+    def _verify_with_llm(self, image_bytes: BytesIO) -> Optional[int]:
+        """使用大模型二次验证
+        
+        Args:
+            image_bytes: 图片字节数据
+            
+        Returns:
+            1: 是货车, 0: 不是货车, None: 验证失败
+        """
         try:
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200 and 'image' in response.headers.get('Content-Type', ''):
-                return BytesIO(response.content)
-        except Exception:
-            pass
-        return None
+            from apps.api.LLM.ZhiPu import detect_truck
+            import tempfile
+            
+            # 保存临时文件用于LLM检测
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                tmp.write(image_bytes.getvalue())
+                tmp_path = tmp.name
+            
+            try:
+                result = detect_truck(tmp_path)
+                return result
+            finally:
+                os.unlink(tmp_path)
+        except Exception as e:
+            logger.warning("LLM验证失败: %s", e)
+            return None
 
     def detect(self, record: Dict) -> Dict:
         """
@@ -59,6 +70,7 @@ class TruckOBUDetector:
                 - fraud_type: 逃费类型
                 - record_vehicle_type: 交易记录车型
                 - visual_vehicle_type: 视觉识别车型
+                - llm_verified: 是否经过LLM二次确认
                 - confidence: 识别置信度
         """
         result = {
@@ -66,6 +78,7 @@ class TruckOBUDetector:
             'fraud_type': None,
             'record_vehicle_type': record.get('VEHICLETYPE'),
             'visual_vehicle_type': None,
+            'llm_verified': False,
             'confidence': 0.0
         }
 
@@ -91,12 +104,25 @@ class TruckOBUDetector:
                 result['visual_vehicle_type'] = visual_class
                 result['confidence'] = confidence
 
-                # 交易记录=客车 但 视觉识别=货车 → 可疑
-                if visual_class == 'truck' and confidence >= 0.8:
-                    result['is_suspicious'] = True
-                    result['fraud_type'] = 'TRUCK_USES_PASSENGER_OBU'
-        except Exception:
-            pass
+                # 模型识别为货车且置信度高
+                if visual_class == 'truck' and confidence >= TRUCK_OBU_CONFIDENCE_THRESHOLD:
+                    # 使用大模型二次确认
+                    image_io.seek(0)
+                    llm_result = self._verify_with_llm(image_io)
+                    
+                    if llm_result == 1:
+                        # 大模型也确认为货车 → 可疑（货套客）
+                        result['is_suspicious'] = True
+                        result['fraud_type'] = 'TRUCK_USES_PASSENGER_OBU'
+                        result['llm_verified'] = True
+                    elif llm_result == 0:
+                        # 大模型否定 → 不是货套客
+                        result['is_suspicious'] = False
+                        result['llm_verified'] = True
+                    # llm_result == None 时保持不确定状态
+                        
+        except Exception as e:
+            logger.error("VehicleClassifier error for %s: %s", record.get('image_trans', 'unknown'), e)
 
         return result
 

@@ -7,7 +7,7 @@ import numpy as np
 from typing import Dict, Optional
 import json
 
-from VehiclePartDetector import VehiclePartDetector
+from apps.api.core.ml.VehiclePartDetector import VehiclePartDetector
 
 
 class MultiPartFingerprint:
@@ -152,7 +152,7 @@ class MultiPartFingerprint:
             if max_pixels / total_pixels < 0.05:
                 return '未知'
             return dominant_color
-        except:
+        except Exception:
             return 'unknown'
 
     def features_to_dict(self, features: Dict) -> Dict:

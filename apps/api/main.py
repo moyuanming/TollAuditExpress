@@ -2,17 +2,35 @@
 FastAPI 应用入口
 """
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.requests import Request
+from starlette.responses import JSONResponse, FileResponse
+import os
 
+from apps.api.core.config import CORS_ORIGINS, API_KEY
 from apps.api.database.connection import init_db, get_db_path
-from apps.api.routers import audit, health
+from apps.api.routers import audit, health, tasks
+from apps.api.services.task_scheduler import start_scheduler
+
+FRONTEND_DIR = os.environ.get("FRONTEND_DIR", os.path.join(os.path.dirname(__file__), "..", "web", "dist"))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    start_scheduler()
+    app.state.truck_detector = None
+    app.state.entry_exit_matcher = None
+    app.state.aggregation_tasks = {}
     yield
 
 
@@ -25,19 +43,54 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    if not API_KEY:
+        return await call_next(request)
+    path = request.url.path
+    if path in ("/", "/health") or path.startswith("/health/") or path.startswith("/docs") or path.startswith("/openapi.json") or path.startswith("/redoc") or path.startswith("/assets/"):
+        return await call_next(request)
+    api_key = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not api_key:
+        api_key = request.headers.get("X-API-Key", "")
+    if api_key != API_KEY:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+    return await call_next(request)
+
 app.include_router(health.router, tags=["health"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
+app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 
 
 @app.get("/")
 async def root():
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
     return {"message": "TollAuditExpress API", "version": "1.0.0"}
+
+
+# Serve frontend static files if built
+if os.path.isdir(FRONTEND_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets")
+
+    @app.middleware("http")
+    async def spa_fallback(request: Request, call_next):
+        """Catch-all: serve index.html for SPA routes (must run before auth middleware)"""
+        path = request.url.path
+        # Skip API/static paths
+        if path.startswith("/api/") or path.startswith("/health") or path.startswith("/docs") or path.startswith("/openapi.json") or path.startswith("/redoc") or path.startswith("/assets/"):
+            return await call_next(request)
+        index_path = os.path.join(FRONTEND_DIR, "index.html")
+        if os.path.isfile(index_path):
+            return FileResponse(index_path)
+        return await call_next(request)
 
 
 if __name__ == "__main__":

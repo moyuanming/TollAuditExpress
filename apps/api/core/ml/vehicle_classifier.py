@@ -4,6 +4,10 @@ from torchvision import transforms, models
 from PIL import Image
 import os
 
+from apps.api.core.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 class VehicleClassifier:
     def __init__(self, model_path, device=None):
         """
@@ -30,7 +34,7 @@ class VehicleClassifier:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file {model_path} not found")
 
-        checkpoint = torch.load(model_path, map_location=self.device)
+        checkpoint = torch.load(model_path, map_location=self.device, weights_only=True)
         model.load_state_dict(checkpoint['model_state_dict'])
         return model.to(self.device).eval()
 
@@ -79,6 +83,10 @@ class VehicleClassifier:
             return [self.transform(raw_input)]
         elif torch.is_tensor(raw_input):  # 已处理张量
             return [raw_input]
+        elif hasattr(raw_input, 'read'):  # 文件类对象 (BytesIO等)
+            raw_input.seek(0)
+            img = Image.open(raw_input).convert('RGB')
+            return [self.transform(img)]
         else:
             raise ValueError("不支持的输入类型")
 
@@ -88,7 +96,7 @@ class VehicleClassifier:
             img = Image.open(path).convert('RGB')
             return self.transform(img)
         except Exception as e:
-            print(f"Error loading {path}: {str(e)}")
+            logger.warning("Error loading %s: %s", path, e)
             return None
 
     def _parse_results(self, outputs, probs, original_input):

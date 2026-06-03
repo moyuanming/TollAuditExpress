@@ -4,23 +4,17 @@
 适配自 getmoveobu/audit/services/entry_exit_matcher.py
 """
 
-import sys
 import os
 from typing import Dict, Optional
 
-GETMOVEOBU_PATH = '/Users/moyuanming/getmoveobu'
-if GETMOVEOBU_PATH not in sys.path:
-    sys.path.insert(0, GETMOVEOBU_PATH)
-
-try:
-    import requests
-    from io import BytesIO
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
+from apps.api.core.config import MODEL_PATH, FINGERPRINT_SIM_THRESHOLD
+from apps.api.services.image_utils import download_image
+from apps.api.core.logging_config import get_logger
 
 from apps.api.core.ml.vehicle_classifier import VehicleClassifier
 from apps.api.core.ml.multi_part_fingerprint import MultiPartFingerprint
+
+logger = get_logger(__name__)
 
 
 class EntryExitMatcher:
@@ -28,22 +22,13 @@ class EntryExitMatcher:
 
     def __init__(self, model_path: str = None):
         if model_path is None:
-            model_path = os.path.join(GETMOVEOBU_PATH, 'best_model.pth')
+            model_path = MODEL_PATH
         self.classifier = VehicleClassifier(model_path)
         self.fingerprint = MultiPartFingerprint()
 
-    def download_image(self, url: str) -> Optional[BytesIO]:
+    def download_image(self, url: str):
         """下载图片"""
-        if not HAS_REQUESTS:
-            return None
-
-        try:
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200 and 'image' in response.headers.get('Content-Type', ''):
-                return BytesIO(response.content)
-        except Exception:
-            pass
-        return None
+        return download_image(url)
 
     def compare(self, entry_record: Dict, exit_record: Dict) -> Dict:
         """
@@ -86,6 +71,8 @@ class EntryExitMatcher:
         entry_io = self.download_image(entry_url)
         exit_io = self.download_image(exit_url)
 
+        logger.info("entry_io=%s, exit_io=%s", 'OK' if entry_io else 'None', 'OK' if exit_io else 'None')
+
         if not entry_io or not exit_io:
             result['fingerprint_sim'] = 0.0
             return result
@@ -111,18 +98,18 @@ class EntryExitMatcher:
             entry_io.seek(0)
             exit_io.seek(0)
 
-            entry_features = self.fingerprint.extract_all_features(entry_io)
-            exit_features = self.fingerprint.extract_all_features(exit_io)
+            entry_features = self.fingerprint.extract_all_features(image_bytes=entry_io.getvalue())
+            exit_features = self.fingerprint.extract_all_features(image_bytes=exit_io.getvalue())
 
             if entry_features and exit_features:
                 import numpy as np
-                entry_vec = entry_features['global_feature']
-                exit_vec = exit_features['global_feature']
+                entry_vec = entry_features['global']
+                exit_vec = exit_features['global']
 
                 sim = np.dot(entry_vec, exit_vec) / (np.linalg.norm(entry_vec) * np.linalg.norm(exit_vec))
                 result['fingerprint_sim'] = float(sim)
 
-                if sim < 0.6:
+                if sim < FINGERPRINT_SIM_THRESHOLD:
                     result['is_suspicious'] = True
                     result['fraud_type'] = 'ENTRY_EXIT_MISMATCH'
 
@@ -136,7 +123,7 @@ class EntryExitMatcher:
             result['_comparison_success'] = True
 
         except Exception as e:
-            print(f"EntryExitMatcher error: {e}")
+            logger.error("EntryExitMatcher error: %s", e)
             result['_comparison_success'] = False
             result['fingerprint_sim'] = 0.0
 

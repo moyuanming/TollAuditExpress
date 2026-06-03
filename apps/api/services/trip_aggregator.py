@@ -1,10 +1,10 @@
 """
-行程聚合服务 - 按PASSID聚合入口-门架-出口记录
-适配自 getmoveobu/audit/services/trip_aggregator.py
+行程聚合服务 - 按PASSID聚合入口-门架-出口记录，并执行视觉检测
 """
 
 from datetime import datetime
 from typing import List, Dict, Optional, Callable
+import json
 
 try:
     import pymysql
@@ -12,13 +12,17 @@ try:
 except ImportError:
     HAS_PYMYSQL = False
 
-# 数据库配置 - 从环境变量或默认值读取
+from apps.api.core.config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+from apps.api.core.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 DB_CONFIG = {
-    'host': '10.11.1.36',
-    'port': 9030,
-    'user': 'root',
-    'password': 'AynyDskmXx@AynyDskmXx',
-    'database': 'dwd_tolldata'
+    'host': DB_HOST,
+    'port': DB_PORT,
+    'user': DB_USER,
+    'password': DB_PASSWORD,
+    'database': DB_NAME
 }
 
 
@@ -143,13 +147,84 @@ def get_recent_passids(days: int = 7, limit: int = 100) -> List[str]:
 
 
 class TripAggregator:
-    """行程聚合器"""
+    """行程聚合器 - 支持自动视觉检测"""
 
-    def __init__(self):
-        pass
+    _truck_detector = None
+    _entry_exit_matcher = None
 
-    def aggregate_recent_trips(self, days: int = 7, limit: int = 100, on_progress: Optional[Callable] = None) -> int:
-        """聚合最近的行程"""
+    def _get_truck_detector(self):
+        if TripAggregator._truck_detector is None:
+            from apps.api.services.truck_obu_detector import TruckOBUDetector
+            TripAggregator._truck_detector = TruckOBUDetector()
+        return TripAggregator._truck_detector
+
+    def _get_entry_exit_matcher(self):
+        if TripAggregator._entry_exit_matcher is None:
+            from apps.api.services.entry_exit_matcher import EntryExitMatcher
+            TripAggregator._entry_exit_matcher = EntryExitMatcher()
+        return TripAggregator._entry_exit_matcher
+
+    def _run_detection(self, trip_data: Dict, trip_id: int):
+        """对行程运行视觉检测"""
+        results_to_save = []
+
+        # Model A: 货车套用客车OBU检测
+        try:
+            detector = self._get_truck_detector()
+            entry_record = {
+                'VEHICLETYPE': trip_data.get('entry_vehicle_type'),
+                'image_trans': trip_data.get('entry_image_trans')
+            }
+            model_a_result = detector.detect(entry_record)
+
+            if model_a_result.get('visual_vehicle_type'):
+                is_sus = 1 if model_a_result.get('is_suspicious') else 0
+                risk = model_a_result.get('confidence', 0) if is_sus else 0
+                results_to_save.append({
+                    'audit_trip_id': trip_id,
+                    'fraud_type': 'TRUCK_USES_PASSENGER_OBU',
+                    'entry_vehicle_type': trip_data.get('entry_vehicle_type'),
+                    'entry_visual_type': model_a_result.get('visual_vehicle_type'),
+                    'is_suspicious': is_sus,
+                    'risk_score': risk,
+                    'details': json.dumps(model_a_result)
+                })
+        except Exception as e:
+            logger.error("Model A detection error: %s", e)
+
+        # Model B: 出入口车辆比对
+        try:
+            matcher = self._get_entry_exit_matcher()
+            entry_record = {'image_license': trip_data.get('entry_image_license')}
+            exit_record = {'image_license': trip_data.get('exit_image_license')}
+            model_b_result = matcher.compare(entry_record, exit_record)
+
+            if model_b_result.get('_comparison_success') or model_b_result.get('fingerprint_sim'):
+                results_to_save.append({
+                    'audit_trip_id': trip_id,
+                    'fraud_type': 'ENTRY_EXIT_MISMATCH',
+                    'entry_visual_type': model_b_result.get('entry_visual_type'),
+                    'exit_visual_type': model_b_result.get('exit_visual_type'),
+                    'entry_color': model_b_result.get('entry_color'),
+                    'exit_color': model_b_result.get('exit_color'),
+                    'is_suspicious': 1 if model_b_result.get('is_suspicious') else 0,
+                    'risk_score': model_b_result.get('fingerprint_sim', 0),
+                    'details': json.dumps(model_b_result)
+                })
+        except Exception as e:
+            logger.error("Model B detection error: %s", e)
+
+        # 保存检测结果（单事务：audit_results + visual_types + status）
+        if results_to_save:
+            try:
+                from apps.api.database.repositories.trip_repository import TripRepository
+                trip_repo = TripRepository()
+                trip_repo.save_trip_with_detection_results(trip_id, trip_data['passid'], results_to_save)
+            except Exception as e:
+                logger.error("Saving results error: %s", e)
+
+    def aggregate_recent_trips(self, days: int = 7, limit: int = 100, on_progress: Optional[Callable] = None, run_detection: bool = True) -> int:
+        """聚合最近的行程并可选执行视觉检测"""
         from apps.api.database.repositories.trip_repository import TripRepository
 
         passids = get_recent_passids(days=days, limit=limit)
@@ -159,7 +234,15 @@ class TripAggregator:
         for i, passid in enumerate(passids):
             trip_data = aggregate_trip(passid)
             if trip_data:
-                repo.save_trip(trip_data)
+                trip_id = repo.save_trip(trip_data)
+                
+                # 运行视觉检测
+                if run_detection and trip_id:
+                    try:
+                        self._run_detection(trip_data, trip_id)
+                    except Exception as e:
+                        logger.error("Detection error for %s: %s", passid, e)
+                
                 count += 1
 
             if on_progress:

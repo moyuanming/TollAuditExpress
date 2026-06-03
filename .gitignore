@@ -29,3 +29,14 @@ npm-debug.log*
 # Cache
 .cache/
 .temp/
+
+# ML model files
+*.pt
+*.pth
+
+# Python cache
+.ruff_cache/
+
+# Environment (strengthen)
+.env.*
+!.env.example
