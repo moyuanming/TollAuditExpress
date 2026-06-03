@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Node
+apps/web/node_modules
+
+# Python cache
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+
+# IDE
+.idea
+.vscode
+
+# Build artifacts
+dist
+build
+build_temp
+*.tar.gz
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Database files
+*.db
+*.db-journal
+
+# Claude
+.claude
+
+# OS
+.DS_Store

@@ -1,0 +1,40 @@
+version: '3.8'
+
+# TollAuditExpress — 高速公路收费稽核系统
+# 用法:
+#   本地构建:  docker-compose up -d --build
+#   拉取镜像:  docker-compose up -d          (需先 docker load < image.tar)
+
+services:
+  audit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: toll-audit-express
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      # SQLite 数据库持久化
+      - ./apps/api/data:/app/apps/api/data
+      # 配置文件
+      - ./.env:/app/.env:ro
+      # 模型文件（只读挂载，避免容器内修改）
+      - ./yolov8n.pt:/app/yolov8n.pt:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FRONTEND_DIR=/app/apps/web/dist
+      # API Key（从 .env 或环境变量读取）
+      - API_KEY=${API_KEY:-}
+      # Doris/源数据库连接（从 .env 读取）
+      - DB_HOST=${DB_HOST:-}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_USER=${DB_USER:-}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - DB_NAME=${DB_NAME:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
