@@ -25,8 +25,18 @@ def execute_task(task: dict) -> dict:
         return _execute_detect_only(filter_rules, trip_repo)
     elif task_type == 're_detect':
         return _execute_re_detect(trip_repo)
+    elif task_type == 'llm_verify':
+        return _execute_llm_verify(filter_rules)
     else:
         return {"error": f"Unknown task_type: {task_type}"}
+
+
+def _execute_llm_verify(filter_rules: dict) -> dict:
+    """LLM 二次判定：批跑所有 llm_checked_at IS NULL 的可疑记录。"""
+    from apps.api.services.llm_batch import run_llm_batch_for_suspects
+    limit = int(filter_rules.get('limit', 50))
+    max_workers = int(filter_rules.get('max_workers', 4))
+    return run_llm_batch_for_suspects(limit=limit, max_workers=max_workers)
 
 
 def _execute_aggregate_detect(filter_rules: dict, trip_repo) -> dict:

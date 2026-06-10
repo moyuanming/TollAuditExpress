@@ -6,6 +6,17 @@
 
 set -e
 
+# ---- 加载本地部署配置（deploy.config.env，已 gitignore），仅用于打印目标信息 ----
+_SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$_SELF_DIR/deploy.config.env" ]; then
+    # shellcheck disable=SC1090
+    source "$_SELF_DIR/deploy.config.env"
+fi
+unset _SELF_DIR
+
+BUILD_SERVER="${BUILD_SERVER:-<未配置>}"
+TARGET_SERVER="${TARGET_SERVER:-<未配置>}"
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[0;33m'

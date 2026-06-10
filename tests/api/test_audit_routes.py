@@ -100,7 +100,7 @@ class TestAuth:
 
     def test_auth_required(self, temp_db, mock_ml_models, mock_image_download, monkeypatch):
         """测试 API_KEY 设置后需要鉴权"""
-        monkeypatch.setattr('apps.api.main.API_KEY', 'secret', raising=False)
+        monkeypatch.setattr('apps.api.core.auth.API_KEY', 'secret')
         from apps.api.main import app
         app.state.truck_detector = None
         app.state.entry_exit_matcher = None
@@ -116,11 +116,27 @@ class TestAuth:
 
     def test_health_bypasses_auth(self, temp_db, monkeypatch):
         """测试健康检查绕过鉴权"""
-        monkeypatch.setattr('apps.api.main.API_KEY', 'secret', raising=False)
+        monkeypatch.setattr('apps.api.core.auth.API_KEY', 'secret')
         from apps.api.main import app
         with TestClient(app) as c:
             resp = c.get('/health')
             assert resp.status_code == 200
+
+    def test_doris_health_endpoint(self, client):
+        """GET /health/doris 返回详细 Doris 健康信息"""
+        resp = client.get('/health/doris')
+        assert resp.status_code == 200
+        data = resp.json()
+        # 测试环境：get_connection 走 SQLite，source_db 连接失败 → "degraded"
+        assert data["status"] in ("ok", "degraded", "error")
+        assert "target_db" in data
+        assert "source_db" in data
+        assert "pool" in data
+        assert data["pool"]["max_size"] > 0
+        # target_db 走 SQLite wrapper，应连接成功
+        assert data["target_db"]["connected"] is True
+        assert "table_counts" in data["target_db"]
+        assert "audit_trips" in data["target_db"]["table_counts"]
 
 
 class TestSuspects:

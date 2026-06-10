@@ -2,12 +2,6 @@
 FastAPI 应用入口
 """
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,9 +10,11 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, FileResponse
 import os
 
-from apps.api.core.config import CORS_ORIGINS, API_KEY
-from apps.api.database.connection import init_db, get_db_path
-from apps.api.routers import audit, health, tasks
+# 注：dotenv 由 apps.api.core.config 顶部负责，此处无需重复加载
+from apps.api.core.config import CORS_ORIGINS
+from apps.api.core.auth import auth_middleware
+from apps.api.database.doris_connection import init_doris
+from apps.api.routers import audit, health, tasks, oauth
 from apps.api.services.task_scheduler import start_scheduler
 
 FRONTEND_DIR = os.environ.get("FRONTEND_DIR", os.path.join(os.path.dirname(__file__), "..", "web", "dist"))
@@ -26,7 +22,7 @@ FRONTEND_DIR = os.environ.get("FRONTEND_DIR", os.path.join(os.path.dirname(__fil
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    init_doris()
     start_scheduler()
     app.state.truck_detector = None
     app.state.entry_exit_matcher = None
@@ -51,21 +47,12 @@ app.add_middleware(
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    if not API_KEY:
-        return await call_next(request)
-    path = request.url.path
-    if path in ("/", "/health") or path.startswith("/health/") or path.startswith("/docs") or path.startswith("/openapi.json") or path.startswith("/redoc") or path.startswith("/assets/"):
-        return await call_next(request)
-    api_key = request.headers.get("Authorization", "").replace("Bearer ", "")
-    if not api_key:
-        api_key = request.headers.get("X-API-Key", "")
-    if api_key != API_KEY:
-        return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
-    return await call_next(request)
+    return await auth_middleware(request, call_next)
 
 app.include_router(health.router, tags=["health"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
+app.include_router(oauth.router)
 
 
 @app.get("/")

@@ -550,6 +550,13 @@ body {
   border-bottom: 1px solid var(--border-primary);
 }
 
+.detail-subsection-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin-bottom: 0.5rem;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -602,6 +609,44 @@ body {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
   background: var(--bg-tertiary);
+}
+
+/* === SmartImage: loading / loaded / error states === */
+.smart-image-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.smart-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-loading-box,
+.image-error-box,
+.image-fallback-box {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.image-error-box {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
 }
 
 .image-compare-status {
@@ -1007,3 +1052,55 @@ body {
 .status-completed { background: var(--accent-green-bg); color: var(--accent-green); }
 .status-running { background: var(--accent-blue-bg); color: var(--accent-blue); }
 .status-failed { background: var(--accent-red-bg); color: var(--accent-red); }
+
+/* === Logout Button === */
+.btn-logout {
+  margin-left: auto;
+  padding: 0.4rem 0.875rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--accent-red);
+  background: transparent;
+  border: 1px solid var(--accent-red);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-logout:hover {
+  background: var(--accent-red);
+  color: white;
+}
+
+/* === Redirect Page === */
+.redirect-loading,
+.redirect-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  text-align: center;
+  gap: 0.75rem;
+}
+.redirect-loading h2,
+.redirect-error h2 {
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+.redirect-loading p,
+.redirect-error p {
+  color: var(--text-secondary);
+}
+.redirect-error button {
+  margin-top: 1rem;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.redirect-error button:hover {
+  background: var(--bg-secondary);
+}

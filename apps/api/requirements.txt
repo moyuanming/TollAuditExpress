@@ -17,10 +17,13 @@ Pillow>=10.0.0
 
 # LLM
 zhipuai>=2.0.0
-volcenginesdkarkruntime>=1.0.0
+# volcenginesdkarkruntime>=1.0.0  # 已不在 PyPI 上；如需 DOUBAO/ARK 集成，请用 volcengine-python-sdk
 openai>=1.0.0
 
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
 httpx>=0.25.0
+
+# Auth
+PyJWT[crypto]>=2.8.0

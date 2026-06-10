@@ -3,7 +3,10 @@ import pytest
 from datetime import datetime
 from io import BytesIO
 
-from apps.api.services.trip_aggregator import build_image_url, aggregate_trip, TripAggregator
+from apps.api.services.trip_aggregator import (
+    build_image_url, build_gantry_image_url,
+    serialize_gantry_records, aggregate_trip, TripAggregator
+)
 
 
 class TestBuildImageURL:
@@ -36,6 +39,83 @@ class TestBuildImageURL:
         }
         url = build_image_url(record)
         assert 'IMG123_license.jpg' in url
+
+
+class TestBuildGantryImageURL:
+    """测试门架图片URL构建 — 优先使用 t_grantry_image 抓拍记录ID"""
+
+    def test_uses_image_id_from_grantry_image(self):
+        """有 IMAGE_ID 时使用抓拍记录ID"""
+        record = {
+            'IMAGE_ID': 'CAPTURE999',  # t_grantry_image.ID
+            'ID': 'TX123',             # t_waste_en_ex_gantry.ID (回退)
+            'VEHICLEID': '京A12345',
+            'VEHICLECOLOR': 1,
+        }
+        url = build_gantry_image_url(record)
+        assert 'pic_id=CAPTURE999' in url
+        assert 'TX123' not in url
+
+    def test_falls_back_to_transaction_id(self):
+        """无 IMAGE_ID 时回退使用交易记录ID"""
+        record = {
+            'ID': 'TX456',
+            'VEHICLEID': '京B67890',
+            'VEHICLECOLOR': 2,
+        }
+        url = build_gantry_image_url(record)
+        assert 'pic_id=TX456' in url
+
+    def test_returns_none_without_required_fields(self):
+        assert build_gantry_image_url({}) is None
+        assert build_gantry_image_url({'ID': 'X'}) is None
+        assert build_gantry_image_url({'ID': 'X', 'VEHICLEID': '京C'}) is None
+
+    def test_url_encodes_plate(self):
+        record = {
+            'IMAGE_ID': 'IMG001',
+            'VEHICLEID': '京A 12345',
+            'VEHICLECOLOR': 1,
+        }
+        url = build_gantry_image_url(record)
+        assert 'vchicle=' in url
+        # 空格应被编码
+        assert ' ' not in url.split('vchicle=')[1].split('&')[0]
+
+
+class TestSerializeGantryRecords:
+    """测试门架记录序列化"""
+
+    def test_serialize_includes_image_id_and_pic_id(self):
+        records = [{
+            'IMAGE_ID': 'CAP001',
+            'ID': 'TX001',
+            'STATION_NAME': '测试门架',
+            'OCCURTIME': datetime(2025, 6, 15, 8, 30, 0),
+            'VEHICLEID': '京A00001',
+            'VEHICLECOLOR': 1,
+            'VEHICLETYPE': 1,
+            'OBUID': 'OBU001',
+        }]
+        import json
+        result = json.loads(serialize_gantry_records(records))
+        assert result[0]['pic_id'] == 'CAP001'
+        assert 'image_url' in result[0]
+
+    def test_serialize_falls_back_pic_id(self):
+        """无 IMAGE_ID 时 pic_id 回退到交易 ID"""
+        records = [{
+            'ID': 'TX002',
+            'STATION_NAME': '门架2',
+            'OCCURTIME': datetime(2025, 6, 15, 9, 0, 0),
+            'VEHICLEID': '京B00002',
+            'VEHICLECOLOR': 2,
+            'VEHICLETYPE': 2,
+            'OBUID': 'OBU002',
+        }]
+        import json
+        result = json.loads(serialize_gantry_records(records))
+        assert result[0]['pic_id'] == 'TX002'
 
 
 class TestTripAggregator:

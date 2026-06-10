@@ -32,8 +32,9 @@ RUN pip install --no-cache-dir --user torch==2.3.1+cpu torchvision==0.18.1+cpu \
     pip install --no-cache-dir --user torch==2.3.1 torchvision==0.18.1
 
 # 编译依赖
+# 注意：libgl1-mesa-glx 已在 Debian 12+ 移除，统一用 libgl1 替代
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libgl1-mesa-glx libglib2.0-0 \
+    gcc g++ libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 Python 依赖（跳过 torch）
@@ -48,7 +49,7 @@ FROM docker.1ms.run/library/python:3.10-slim
 
 # 运行时依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 libgl1-mesa-glx libglib2.0-0 \
+    libgomp1 libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户

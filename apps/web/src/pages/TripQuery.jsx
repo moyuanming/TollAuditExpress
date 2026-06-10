@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { auditApi } from '../api/audit'
+import SmartImage from '../components/SmartImage'
 
 function TripQuery() {
   const [activeModel, setActiveModel] = useState('modelA')
@@ -116,11 +117,10 @@ function TripQuery() {
       case 'entry_image':
         if (trip.entry_image_trans) {
           return (
-            <img 
-              src={trip.entry_image_trans} 
-              alt="entry" 
-              className="image-thumb"
-              onError={(e) => e.target.style.display = 'none'}
+            <SmartImage
+              imageUrl={trip.entry_image_trans}
+              alt="entry"
+              style={{ width: 60, height: 45, aspectRatio: '4/3' }}
             />
           )
         }
@@ -180,11 +180,10 @@ function TripQuery() {
       case 'entry_image':
         if (trip.entry_image_license) {
           return (
-            <img 
-              src={trip.entry_image_license} 
-              alt="entry" 
-              className="image-thumb"
-              onError={(e) => e.target.style.display = 'none'}
+            <SmartImage
+              imageUrl={trip.entry_image_license}
+              alt="entry"
+              style={{ width: 60, height: 45, aspectRatio: '4/3' }}
             />
           )
         }
@@ -192,11 +191,10 @@ function TripQuery() {
       case 'exit_image':
         if (trip.exit_image_license) {
           return (
-            <img 
-              src={trip.exit_image_license} 
-              alt="exit" 
-              className="image-thumb"
-              onError={(e) => e.target.style.display = 'none'}
+            <SmartImage
+              imageUrl={trip.exit_image_license}
+              alt="exit"
+              style={{ width: 60, height: 45, aspectRatio: '4/3' }}
             />
           )
         }
@@ -482,11 +480,10 @@ function TripQuery() {
                   <div style={{marginTop: '1rem'}}>
                     <div className="detail-label" style={{marginBottom: '0.5rem'}}>入口车辆图片 (_trans.jpg)</div>
                     {selectedTrip.entry_image_trans ? (
-                      <img 
-                        src={selectedTrip.entry_image_trans} 
+                      <SmartImage
+                        imageUrl={selectedTrip.entry_image_trans}
                         alt="entry vehicle"
-                        style={{width: '100%', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-primary)'}}
-                        onError={(e) => e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" fill="%23eee"><rect width="200" height="150"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23999">图片加载失败</text></svg>'}
+                        style={{width: '100%', aspectRatio: '4/3', border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)'}}
                       />
                     ) : (
                       <div style={{padding: '2rem', textAlign: 'center', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)'}}>
@@ -506,11 +503,10 @@ function TripQuery() {
                       <div className="image-compare-item">
                         <div className="image-compare-label">入口</div>
                         {selectedTrip.entry_image_license ? (
-                          <img 
-                            src={selectedTrip.entry_image_license} 
+                          <SmartImage
+                            imageUrl={selectedTrip.entry_image_license}
                             alt="entry"
-                            className="image-compare-img"
-                            onError={(e) => e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" fill="%23eee"><rect width="200" height="150"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23999">加载失败</text></svg>'}
+                            style={{ aspectRatio: '4/3', width: '100%' }}
                           />
                         ) : (
                           <div className="image-compare-img" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)'}}>
@@ -521,11 +517,10 @@ function TripQuery() {
                       <div className="image-compare-item">
                         <div className="image-compare-label">出口</div>
                         {selectedTrip.exit_image_license ? (
-                          <img 
-                            src={selectedTrip.exit_image_license} 
+                          <SmartImage
+                            imageUrl={selectedTrip.exit_image_license}
                             alt="exit"
-                            className="image-compare-img"
-                            onError={(e) => e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" fill="%23eee"><rect width="200" height="150"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23999">加载失败</text></svg>'}
+                            style={{ aspectRatio: '4/3', width: '100%' }}
                           />
                         ) : (
                           <div className="image-compare-img" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)'}}>

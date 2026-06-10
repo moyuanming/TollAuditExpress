@@ -40,3 +40,8 @@ npm-debug.log*
 # Environment (strengthen)
 .env.*
 !.env.example
+
+# 部署本地配置 & 产物
+deploy.config.env
+build_temp/
+*.tar.gz

@@ -5,13 +5,41 @@ const errorListeners = []
 export function onApiError(listener) { errorListeners.push(listener) }
 
 async function fetchJSON(url, options = {}) {
-  const headers = {
-    ...options.headers,
-    'X-API-Key': localStorage.getItem('api_key') || ''
+  const token = localStorage.getItem('auth_token')
+  const headers = { ...options.headers }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  const apiKey = localStorage.getItem('api_key')
+  if (apiKey && !token) {
+    headers['X-API-Key'] = apiKey
   }
   const res = await fetch(url, { ...options, headers })
+  const newToken = res.headers.get('X-New-Access-Token')
+  if (newToken) {
+    localStorage.setItem('auth_token', newToken)
+  }
   if (!res.ok) {
-    const error = new Error(`HTTP ${res.status}`)
+    if (res.status === 401 && localStorage.getItem('auth_token')) {
+      localStorage.removeItem('auth_token')
+      window.dispatchEvent(new CustomEvent('auth:invalid'))
+    }
+    let errorMessage = `HTTP ${res.status}`
+    try {
+      const errorData = await res.json()
+      const detail = errorData && errorData.detail
+      if (typeof detail === 'string') {
+        errorMessage = detail
+      } else if (detail && typeof detail === 'object') {
+        const code = detail.error || 'unknown_error'
+        const sub = detail.field || detail.detail
+        errorMessage = sub ? `${code}: ${sub}` : code
+      }
+    } catch {
+      // 响应体不是 JSON，忽略
+    }
+    const error = new Error(errorMessage)
+    error.status = res.status
     errorListeners.forEach(l => l(error))
     throw error
   }
@@ -35,6 +63,22 @@ export const auditApi = {
     return fetchJSON(`${API_BASE}/trip/${passid}`)
   },
 
+  // 行程完整详情（含门架图片流水 + 关联稽核结果）
+  async getTripFull(passid) {
+    return fetchJSON(`${API_BASE}/trip/${passid}/full`)
+  },
+
+  // Doris 原始数据：任意车辆通行列表（无检测后字段）
+  async getRawVehicles(params = {}) {
+    const qs = new URLSearchParams(params).toString()
+    return fetchJSON(`${API_BASE}/doris/vehicles?${qs}`)
+  },
+
+  // Doris 原始数据：单个行程详情（无 audit_results）
+  async getRawVehicleFull(passid) {
+    return fetchJSON(`${API_BASE}/doris/vehicle/${passid}/full`)
+  },
+
   // 启动聚合任务
   async aggregateTrips(data = {}) {
     return fetchJSON(`${API_BASE}/trips/aggregate`, {
@@ -54,6 +98,7 @@ export const auditApi = {
     const filtered = {}
     if (params.fraud_type) filtered.fraud_type = params.fraud_type
     if (params.process_status) filtered.process_status = params.process_status
+    if (params.llm_result) filtered.llm_result = params.llm_result
     if (params.limit) filtered.limit = params.limit
     if (params.offset) filtered.offset = params.offset
     const qs = new URLSearchParams(filtered).toString()
@@ -74,6 +119,15 @@ export const auditApi = {
     })
   },
 
+  // 手动对单条可疑记录触发 LLM 二次判定（覆盖已有 verdict）
+  async llmVerifySuspect(id) {
+    return fetchJSON(`${API_BASE}/suspect/${id}/llm-verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+  },
+
   // 检测货车套用OBU
   async detectTruckOBU(passid) {
     return fetchJSON(`${API_BASE}/detect/truck-obu`, {
@@ -86,6 +140,15 @@ export const auditApi = {
   // 检测出入口不一致
   async detectEntryExit(passid) {
     return fetchJSON(`${API_BASE}/detect/entry-exit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passid })
+    })
+  },
+
+  // 手动调用 MaaS 双图比对出入口车牌特写
+  async compareVehiclesMaaS(passid) {
+    return fetchJSON(`${API_BASE}/detect/entry-exit/llm`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ passid })

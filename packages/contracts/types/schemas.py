@@ -44,6 +44,7 @@ class TripResponse(BaseModel):
     entry_visual_type: Optional[str] = None
     exit_visual_type: Optional[str] = None
     fingerprint_sim: Optional[float] = None
+    gantry_records: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -56,6 +57,12 @@ class TripListResponse(BaseModel):
     offset: int
 
 
+class TripDetailResponse(TripResponse):
+    """行程详情（含门架图片流水与该行程触发的所有稽核结果）"""
+    gantry_image_records: Optional[str] = None
+    audit_results: List["SuspectResponse"] = []
+
+
 class SuspectResponse(BaseModel):
     id: int
     audit_trip_id: int
@@ -63,16 +70,41 @@ class SuspectResponse(BaseModel):
     passid: str
     entry_time: Optional[str] = None
     exit_time: Optional[str] = None
+    entry_station_name: Optional[str] = None
+    exit_station_name: Optional[str] = None
+    entry_lane_id: Optional[str] = None
+    exit_lane_id: Optional[str] = None
     entry_vehicle_id: Optional[str] = None
     exit_vehicle_id: Optional[str] = None
     entry_vehicle_type: Optional[int] = None
     exit_vehicle_type: Optional[int] = None
+    entry_vehicle_color: Optional[int] = None
+    exit_vehicle_color: Optional[int] = None
+    entry_obu_id: Optional[str] = None
+    exit_obu_id: Optional[str] = None
+    entry_media_type: Optional[int] = None
+    exit_media_type: Optional[int] = None
+    entry_image_license: Optional[str] = None
+    entry_image_trans: Optional[str] = None
+    exit_image_license: Optional[str] = None
+    exit_image_trans: Optional[str] = None
     entry_visual_type: Optional[str] = None
     exit_visual_type: Optional[str] = None
+    entry_color: Optional[str] = None
+    exit_color: Optional[str] = None
     is_suspicious: int = 0
     risk_score: float = 0.0
     process_status: str = 'UNPROCESSED'
     details: Optional[str] = None
+    gantry_count: int = 0
+    gantry_records: Optional[str] = None
+    gantry_image_records: Optional[str] = None
+    # LLM 二次判定结果（由 llm_batch.py 写入；未判定时为 None）
+    llm_is_same_vehicle: Optional[int] = None
+    llm_confidence: Optional[float] = None
+    llm_reason: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_checked_at: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -167,3 +199,69 @@ class TaskExecutionResponse(BaseModel):
 class TaskExecutionListResponse(BaseModel):
     executions: List[TaskExecutionResponse]
     total: int
+
+
+# ---- 车辆查询（原始 Doris 数据）----
+
+
+class RawTripResponse(BaseModel):
+    """来自 Doris 原始表的行程聚合结果（不含检测后字段）"""
+    passid: str
+    entry_time: Optional[str] = None
+    entry_station_name: Optional[str] = None
+    entry_vehicle_id: Optional[str] = None
+    entry_vehicle_color: Optional[str] = None
+    entry_vehicle_type: Optional[int] = None
+    entry_obu_id: Optional[str] = None
+    exit_time: Optional[str] = None
+    exit_station_name: Optional[str] = None
+    exit_vehicle_id: Optional[str] = None
+    exit_vehicle_color: Optional[str] = None
+    exit_vehicle_type: Optional[int] = None
+    exit_obu_id: Optional[str] = None
+    gantry_count: int = 0
+
+
+class RawTripListResponse(BaseModel):
+    trips: List[RawTripResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class RawTripDetailResponse(RawTripResponse):
+    """原始数据视角下的行程详情（无 audit_results）"""
+    entry_lane_id: Optional[str] = None
+    exit_lane_id: Optional[str] = None
+    entry_image_license: Optional[str] = None
+    entry_image_trans: Optional[str] = None
+    exit_image_license: Optional[str] = None
+    exit_image_trans: Optional[str] = None
+    gantry_records: Optional[str] = None
+    gantry_image_records: Optional[str] = None
+
+
+# ---- MaaS 出入口车辆双图比对 ----
+
+
+class DetectEntryExitLLMRequest(BaseModel):
+    """手动触发 MaaS 双图比对的请求体（车牌特写 image_license）。"""
+    passid: str
+
+
+class LlmVehicleCompareResponse(BaseModel):
+    """MaaS 双图比对响应。结构化 JSON 由 LLM 输出，前端可渲染置信度与依据。"""
+    passid: str
+    is_same_vehicle: bool
+    confidence: float
+    reason: str
+    entry_image_url: Optional[str] = None
+    exit_image_url: Optional[str] = None
+    model: str
+    elapsed_ms: int
+
+
+TripDetailResponse.model_rebuild()
+
+
+TripDetailResponse.model_rebuild()
