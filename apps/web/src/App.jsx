@@ -6,6 +6,7 @@ import VehicleQuery from './pages/VehicleQuery'
 import SuspectList from './pages/SuspectList'
 import Statistics from './pages/Statistics'
 import TaskManager from './pages/TaskManager'
+import RuleStudio from './pages/RuleStudio'
 import Redirect from './pages/Redirect'
 import { onApiError } from './api/audit'
 import { AuthProvider, useAuth } from './components/AuthContext'
@@ -38,6 +39,9 @@ function AppNav() {
         </NavLink>
         <NavLink to="/tasks" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
           ⏰ 定时任务
+        </NavLink>
+        <NavLink to="/rules" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
+          📐 规则管理
         </NavLink>
       </div>
       {isAuthenticated && (
@@ -75,6 +79,7 @@ function App() {
                     <Route path="/suspects" element={<SuspectList />} />
                     <Route path="/stats" element={<Statistics />} />
                     <Route path="/tasks" element={<TaskManager />} />
+                    <Route path="/rules" element={<RuleStudio />} />
                     <Route path="*" element={<Navigate to="/" />} />
                   </Routes>
                 </AuthGuard>

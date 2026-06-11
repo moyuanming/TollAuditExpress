@@ -333,6 +333,42 @@ body {
   box-shadow: 0 0 0 3px var(--accent-blue-bg);
 }
 
+.multi-select-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.chip:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-blue);
+}
+
+.chip-active {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  font-weight: 500;
+}
+
+.chip-clear {
+  color: var(--text-tertiary);
+  border-style: dashed;
+}
+
 /* === Table Container === */
 .table-panel {
   flex: 1;
@@ -1052,6 +1088,51 @@ body {
 .status-completed { background: var(--accent-green-bg); color: var(--accent-green); }
 .status-running { background: var(--accent-blue-bg); color: var(--accent-blue); }
 .status-failed { background: var(--accent-red-bg); color: var(--accent-red); }
+
+/* === Execution Detail Modal === */
+.modal-lg { max-width: 760px; width: 92%; }
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  padding-bottom: 0.5rem;
+}
+.modal-body { max-height: 70vh; overflow-y: auto; padding-right: 4px; }
+.detail-row {
+  display: flex;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  align-items: flex-start;
+  font-size: 0.85rem;
+  border-bottom: 1px dashed var(--border-color, #e5e7eb);
+}
+.detail-row:last-child { border-bottom: none; }
+.detail-label {
+  flex-shrink: 0;
+  width: 70px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.detail-pre {
+  flex: 1;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #f6f8fa;
+  padding: 0.5rem 0.6rem;
+  border-radius: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.detail-error { color: var(--accent-red, #dc2626); background: #fef2f2; }
+.detail-logs-row { flex-direction: column; }
+.detail-logs-row .detail-label { width: auto; margin-bottom: 0.25rem; }
+.detail-logs-row .detail-pre { max-height: 400px; }
 
 /* === Logout Button === */
 .btn-logout {

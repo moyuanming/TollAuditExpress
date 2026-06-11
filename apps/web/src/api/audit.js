@@ -4,7 +4,7 @@ const TASK_BASE = '/api'
 const errorListeners = []
 export function onApiError(listener) { errorListeners.push(listener) }
 
-async function fetchJSON(url, options = {}) {
+export async function fetchJSON(url, options = {}) {
   const token = localStorage.getItem('auth_token')
   const headers = { ...options.headers }
   if (token) {
@@ -95,14 +95,18 @@ export const auditApi = {
 
   // 可疑记录列表
   async getSuspects(params = {}) {
-    const filtered = {}
-    if (params.fraud_type) filtered.fraud_type = params.fraud_type
-    if (params.process_status) filtered.process_status = params.process_status
-    if (params.llm_result) filtered.llm_result = params.llm_result
-    if (params.limit) filtered.limit = params.limit
-    if (params.offset) filtered.offset = params.offset
-    const qs = new URLSearchParams(filtered).toString()
-    return fetchJSON(`${API_BASE}/suspects?${qs}`)
+    const qs = new URLSearchParams()
+    if (params.fraud_types && params.fraud_types.length > 0) {
+      params.fraud_types.forEach(t => qs.append('fraud_types', t))
+    } else if (params.fraud_type) {
+      qs.set('fraud_types', params.fraud_type)
+    }
+    if (params.process_status) qs.set('process_status', params.process_status)
+    if (params.llm_result) qs.set('llm_result', params.llm_result)
+    if (params.limit) qs.set('limit', params.limit)
+    if (params.offset) qs.set('offset', params.offset)
+    const query = qs.toString()
+    return fetchJSON(`${API_BASE}/suspects${query ? `?${query}` : ''}`)
   },
 
   // 可疑记录详情
@@ -195,5 +199,9 @@ export const taskApi = {
 
   async getTaskExecutions(id, limit = 50) {
     return fetchJSON(`${TASK_BASE}/tasks/${id}/executions?limit=${limit}`)
+  },
+
+  async getTaskExecutionDetail(taskId, executionId) {
+    return fetchJSON(`${TASK_BASE}/tasks/${taskId}/executions/${executionId}`)
   }
 }

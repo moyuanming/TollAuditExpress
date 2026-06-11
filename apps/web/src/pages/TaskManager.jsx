@@ -4,8 +4,31 @@ import { taskApi } from '../api/audit'
 const TASK_TYPES = {
   aggregate_detect: '聚合+检测',
   detect_only: '仅检测',
+  multi_detect: '多维度检测',
   re_detect: '补检测'
 }
+
+const FRAUD_TYPE_LABEL = {
+  TRUCK_USES_PASSENGER_OBU: '🚛 货套OBU',
+  TRUCK_AS_CAR: '🚛 货套客',
+  ENTRY_EXIT_MISMATCH: '🚗 出入口',
+  GATEWAY_ANOMALY: '🛣️ 门架异常',
+  VEHICLE_TYPE_DOWNGRADE: '🔻 大车小标',
+  SAME_PLATE_DIFF_VEHICLE: '🎭 同牌不同车',
+  OBU_UNBIND: '🔁 OBU 借用',
+  OBU_SHIELD: '🛡️ OBU 屏蔽'
+}
+
+const FRAUD_TYPE_FILTER_OPTIONS = [
+  { value: 'TRUCK_USES_PASSENGER_OBU', label: '🚛 货套OBU' },
+  { value: 'TRUCK_AS_CAR', label: '🚛 货套客' },
+  { value: 'ENTRY_EXIT_MISMATCH', label: '🚗 出入口' },
+  { value: 'GATEWAY_ANOMALY', label: '🛣️ 门架异常' },
+  { value: 'VEHICLE_TYPE_DOWNGRADE', label: '🔻 大车小标' },
+  { value: 'SAME_PLATE_DIFF_VEHICLE', label: '🎭 同牌不同车' },
+  { value: 'OBU_UNBIND', label: '🔁 OBU 借用' },
+  { value: 'OBU_SHIELD', label: '🛡️ OBU 屏蔽' }
+]
 
 function TaskManager() {
   const [tasks, setTasks] = useState([])
@@ -15,12 +38,15 @@ function TaskManager() {
   const [expandedTask, setExpandedTask] = useState(null)
   const [executions, setExecutions] = useState({})
   const [executingTasks, setExecutingTasks] = useState({})
+  const [detailExec, setDetailExec] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const detailTimerRef = useRef(null)
   const pollTimerRef = useRef(null)
   const [form, setForm] = useState({
     name: '',
     description: '',
     task_type: 'aggregate_detect',
-    filter_rules: { exit_station: '', entry_station: '', days: 3, limit: 500 },
+    filter_rules: { exit_station: '', entry_station: '', days: 3, limit: 500, fraud_types: [] },
     schedule_type: 'interval',
     schedule_config: { minutes: 60 }
   })
@@ -28,6 +54,10 @@ function TaskManager() {
   useEffect(() => {
     loadTasks()
     return () => { if (pollTimerRef.current) clearTimeout(pollTimerRef.current) }
+  }, [])
+
+  useEffect(() => {
+    return () => { if (detailTimerRef.current) clearTimeout(detailTimerRef.current) }
   }, [])
 
   async function loadTasks() {
@@ -47,7 +77,7 @@ function TaskManager() {
       name: '',
       description: '',
       task_type: 'aggregate_detect',
-      filter_rules: { exit_station: '', entry_station: '', days: 3, limit: 500 },
+      filter_rules: { exit_station: '', entry_station: '', days: 3, limit: 500, fraud_types: [] },
       schedule_type: 'interval',
       schedule_config: { minutes: 60 }
     })
@@ -72,7 +102,8 @@ function TaskManager() {
         exit_station: rules.exit_station || '',
         entry_station: rules.entry_station || '',
         days: rules.days || 3,
-        limit: rules.limit || 500
+        limit: rules.limit || 500,
+        fraud_types: Array.isArray(rules.fraud_types) ? rules.fraud_types : []
       },
       schedule_type: task.schedule_type || 'interval',
       schedule_config: {
@@ -80,6 +111,27 @@ function TaskManager() {
       }
     })
     setShowForm(true)
+  }
+
+  function toggleFraudType(value) {
+    setForm(prev => {
+      const current = prev.filter_rules.fraud_types || []
+      const exists = current.includes(value)
+      return {
+        ...prev,
+        filter_rules: {
+          ...prev.filter_rules,
+          fraud_types: exists ? current.filter(t => t !== value) : [...current, value]
+        }
+      }
+    })
+  }
+
+  function clearFraudTypes() {
+    setForm(prev => ({
+      ...prev,
+      filter_rules: { ...prev.filter_rules, fraud_types: [] }
+    }))
   }
 
   async function handleSubmit(e) {
@@ -175,6 +227,34 @@ function TaskManager() {
     }
   }
 
+  async function openExecutionDetail(taskId, executionId) {
+    setDetailLoading(true)
+    setDetailExec({ id: executionId, task_id: taskId, status: 'loading' })
+    if (detailTimerRef.current) clearTimeout(detailTimerRef.current)
+    await fetchDetail(taskId, executionId)
+  }
+
+  async function fetchDetail(taskId, executionId) {
+    try {
+      const data = await taskApi.getTaskExecutionDetail(taskId, executionId)
+      setDetailExec(data)
+      setDetailLoading(false)
+      if (data.status === 'running') {
+        detailTimerRef.current = setTimeout(() => fetchDetail(taskId, executionId), 3000)
+      }
+    } catch (e) {
+      console.error('Failed to load execution detail:', e)
+      setDetailLoading(false)
+    }
+  }
+
+  function closeDetail() {
+    if (detailTimerRef.current) clearTimeout(detailTimerRef.current)
+    detailTimerRef.current = null
+    setDetailExec(null)
+    setDetailLoading(false)
+  }
+
   function formatTime(t) {
     if (!t) return '—'
     return t.replace('T', ' ').substring(0, 19)
@@ -203,6 +283,10 @@ function TaskManager() {
     if (rules.entry_station) parts.push(`入口:${rules.entry_station}`)
     if (rules.days) parts.push(`${rules.days}天`)
     if (rules.limit) parts.push(`限${rules.limit}条`)
+    if (Array.isArray(rules.fraud_types) && rules.fraud_types.length > 0) {
+      const labels = rules.fraud_types.map(t => FRAUD_TYPE_LABEL[t] || t).join('+')
+      parts.push(`类型:${labels}`)
+    }
     return parts.length > 0 ? parts.join(' ') : '默认'
   }
 
@@ -253,6 +337,7 @@ function TaskManager() {
                 >
                   <option value="aggregate_detect">聚合+检测</option>
                   <option value="detect_only">仅检测</option>
+                  <option value="multi_detect">多维度检测（规则引擎+多 detector）</option>
                   <option value="re_detect">补检测</option>
                 </select>
               </div>
@@ -304,6 +389,41 @@ function TaskManager() {
                   />
                 </div>
               </div>
+
+              {form.task_type === 'multi_detect' && (
+                <div className="form-group">
+                  <label>欺诈类型（多选，留空 = 全部）</label>
+                  <div className="multi-select-chips">
+                    {FRAUD_TYPE_FILTER_OPTIONS.map(opt => {
+                      const active = (form.filter_rules.fraud_types || []).includes(opt.value)
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className={`chip ${active ? 'chip-active' : ''}`}
+                          onClick={() => toggleFraudType(opt.value)}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                    {form.filter_rules.fraud_types.length > 0 && (
+                      <button
+                        type="button"
+                        className="chip chip-clear"
+                        onClick={clearFraudTypes}
+                      >
+                        清除
+                      </button>
+                    )}
+                  </div>
+                  <span className="form-hint">
+                    当前已选: {form.filter_rules.fraud_types.length === 0
+                      ? '全部（不限）'
+                      : form.filter_rules.fraud_types.map(t => FRAUD_TYPE_LABEL[t] || t).join(' + ')}
+                  </span>
+                </div>
+              )}
 
               <h4 className="form-section-title">调度设置</h4>
               <div className="form-group">
@@ -401,6 +521,7 @@ function TaskManager() {
                           <th>完成时间</th>
                           <th>结果</th>
                           <th>错误</th>
+                          <th>操作</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -423,6 +544,14 @@ function TaskManager() {
                               })() : '—'}
                             </td>
                             <td className="exec-error">{ex.error_message || '—'}</td>
+                            <td>
+                              <button
+                                className="btn btn-sm btn-link"
+                                onClick={() => openExecutionDetail(task.id, ex.id)}
+                              >
+                                详情
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -432,6 +561,57 @@ function TaskManager() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {detailExec && (
+        <div className="modal-overlay" onClick={closeDetail}>
+          <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>执行详情 #{detailExec.id}</h3>
+              <button className="btn btn-link btn-sm" onClick={closeDetail}>关闭 ✕</button>
+            </div>
+            <div className="modal-body">
+              {detailLoading && <div className="loading">加载中...</div>}
+              <div className="detail-row">
+                <span className="detail-label">状态</span>
+                <span className={`status-badge status-${detailExec.status}`}>
+                  {detailExec.status === 'completed' ? '已完成' : detailExec.status === 'running' ? '运行中' : detailExec.status === 'failed' ? '失败' : detailExec.status}
+                </span>
+                {detailExec.status === 'running' && <span className="text-secondary" style={{ marginLeft: 8 }}>(自动刷新中)</span>}
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">开始</span><span>{formatTime(detailExec.started_at)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">完成</span><span>{formatTime(detailExec.completed_at)}</span>
+              </div>
+              {detailExec.error_message && (
+                <div className="detail-row">
+                  <span className="detail-label">错误</span>
+                  <pre className="detail-pre detail-error">{detailExec.error_message}</pre>
+                </div>
+              )}
+              {detailExec.result_summary && (
+                <div className="detail-row">
+                  <span className="detail-label">结果</span>
+                  <pre className="detail-pre">{(() => {
+                    try {
+                      const s = typeof detailExec.result_summary === 'string'
+                        ? JSON.parse(detailExec.result_summary) : detailExec.result_summary
+                      return JSON.stringify(s, null, 2)
+                    } catch (e) { return String(detailExec.result_summary) }
+                  })()}</pre>
+                </div>
+              )}
+              <div className="detail-row detail-logs-row">
+                <span className="detail-label">日志 {detailExec.logs ? `(${(detailExec.logs.match(/\n/g) || []).length + 1} 行)` : ''}</span>
+                <pre className="detail-pre detail-logs">
+                  {detailExec.logs || (detailExec.status === 'running' ? '(执行中，日志每 5 秒刷新一次...)' : '(无日志)')}
+                </pre>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

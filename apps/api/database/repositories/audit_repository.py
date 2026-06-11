@@ -9,13 +9,18 @@ from apps.api.database.doris_connection import get_connection
 class AuditRepository:
     """稽核结果仓储"""
 
-    def get_suspects(self, fraud_type: str = None, process_status: str = None,
+    def get_suspects(self, fraud_type: str = None, fraud_types: Optional[List[str]] = None,
+                     process_status: str = None,
                      llm_result: str = None, limit: int = 100, offset: int = 0) -> List[Dict]:
         with get_connection() as conn:
             cursor = conn.cursor()
             conditions = ["ar.is_suspicious = 1"]
             params = []
-            if fraud_type:
+            if fraud_types:
+                placeholders = ",".join(["%s"] * len(fraud_types))
+                conditions.append(f"ar.fraud_type IN ({placeholders})")
+                params.extend(fraud_types)
+            elif fraud_type:
                 conditions.append("ar.fraud_type = %s")
                 params.append(fraud_type)
             if process_status:
@@ -41,13 +46,18 @@ class AuditRepository:
             """, params + [limit, offset])
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_suspects_count(self, fraud_type: str = None, process_status: str = None,
+    def get_suspects_count(self, fraud_type: str = None, fraud_types: Optional[List[str]] = None,
+                           process_status: str = None,
                            llm_result: str = None) -> int:
         with get_connection() as conn:
             cursor = conn.cursor()
             conditions = ["is_suspicious = 1"]
             params = []
-            if fraud_type:
+            if fraud_types:
+                placeholders = ",".join(["%s"] * len(fraud_types))
+                conditions.append(f"fraud_type IN ({placeholders})")
+                params.extend(fraud_types)
+            elif fraud_type:
                 conditions.append("fraud_type = %s")
                 params.append(fraud_type)
             if process_status:
@@ -123,6 +133,27 @@ class AuditRepository:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM audit_results WHERE id = %s", (suspect_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_visual_features_by_passid(self, passid: str) -> Optional[Dict]:
+        """按 passid 取最近一条可疑稽核结果的视觉信号（颜色/车型/fingerprint_sim）。
+
+        用于把侧车非 LLM 信号（HSV 颜色、ResNet18 车型、ResNet50 2048-d 余弦相似度）
+        透传给 vehicle-ai-service 的分档裁决器，避免 LLM 调用。
+        """
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ar.entry_color, ar.exit_color,
+                       ar.entry_visual_type, ar.exit_visual_type,
+                       ar.fingerprint_sim
+                FROM audit_results ar
+                JOIN audit_trips at ON ar.audit_trip_id = at.id
+                WHERE at.passid = %s
+                ORDER BY ar.created_at DESC
+                LIMIT 1
+            """, (passid,))
             row = cursor.fetchone()
             return dict(row) if row else None
 

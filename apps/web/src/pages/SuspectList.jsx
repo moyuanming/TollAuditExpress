@@ -5,8 +5,35 @@ import VehicleTripDetail from '../components/VehicleTripDetail'
 import { formatTime } from '../components/tripDetailUtils'
 
 const FRAUD_TYPE_LABEL = {
-  TRUCK_USES_PASSENGER_OBU: '货车套用客车OBU',
-  ENTRY_EXIT_MISMATCH: '出入口车辆不一致'
+  TRUCK_USES_PASSENGER_OBU: '🚛 货车套OBU',
+  TRUCK_AS_CAR: '🚛 货套客',
+  ENTRY_EXIT_MISMATCH: '🚗 出入口不一致',
+  GATEWAY_ANOMALY: '🛣️ 门架异常',
+  VEHICLE_TYPE_DOWNGRADE: '🔻 大车小标',
+  SAME_PLATE_DIFF_VEHICLE: '🎭 同牌不同车',
+  OBU_UNBIND: '🔁 OBU 借用',
+  OBU_SHIELD: '🛡️ OBU 屏蔽'
+}
+
+const FRAUD_TYPE_FILTER_OPTIONS = [
+  { value: 'TRUCK_USES_PASSENGER_OBU', label: '🚛 货套OBU' },
+  { value: 'TRUCK_AS_CAR', label: '🚛 货套客' },
+  { value: 'ENTRY_EXIT_MISMATCH', label: '🚗 出入口' },
+  { value: 'GATEWAY_ANOMALY', label: '🛣️ 门架异常' },
+  { value: 'VEHICLE_TYPE_DOWNGRADE', label: '🔻 大车小标' },
+  { value: 'SAME_PLATE_DIFF_VEHICLE', label: '🎭 同牌不同车' },
+  { value: 'OBU_UNBIND', label: '🔁 OBU 借用' },
+  { value: 'OBU_SHIELD', label: '🛡️ OBU 屏蔽' }
+]
+
+const FRAUD_TYPE_BADGE_CLASS = {
+  TRUCK_USES_PASSENGER_OBU: 'badge-purple',
+  TRUCK_AS_CAR: 'badge-purple',
+  GATEWAY_ANOMALY: 'badge-warning',
+  VEHICLE_TYPE_DOWNGRADE: 'badge-danger',
+  SAME_PLATE_DIFF_VEHICLE: 'badge-danger',
+  OBU_UNBIND: 'badge-warning',
+  OBU_SHIELD: 'badge-info'
 }
 
 const STATUS_LABEL = {
@@ -24,7 +51,7 @@ function SuspectList() {
   const [selectedId, setSelectedId] = useState(initialId)
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [filters, setFilters] = useState({ fraudType: '', status: '', llmResult: '' })
+  const [filters, setFilters] = useState({ fraudTypes: [], status: '', llmResult: '' })
   const [actionOperator, setActionOperator] = useState('admin')
   const [actionComment, setActionComment] = useState('')
 
@@ -55,7 +82,7 @@ function SuspectList() {
     setLoading(true)
     try {
       const params = { limit: 200 }
-      if (filters.fraudType) params.fraud_type = filters.fraudType
+      if (filters.fraudTypes.length > 0) params.fraud_types = filters.fraudTypes
       if (filters.status) params.process_status = filters.status
       if (filters.llmResult) params.llm_result = filters.llmResult
       const data = await auditApi.getSuspects(params)
@@ -65,6 +92,16 @@ function SuspectList() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function toggleFraudType(value) {
+    setFilters(prev => {
+      const exists = prev.fraudTypes.includes(value)
+      return {
+        ...prev,
+        fraudTypes: exists ? prev.fraudTypes.filter(t => t !== value) : [...prev.fraudTypes, value]
+      }
+    })
   }
 
   async function handleProcess(id, action) {
@@ -177,15 +214,30 @@ function SuspectList() {
       <div className="filter-section">
         <div className="filter-group">
           <span className="filter-label">欺诈类型:</span>
-          <select
-            className="filter-select"
-            value={filters.fraudType}
-            onChange={(e) => setFilters({...filters, fraudType: e.target.value})}
-          >
-            <option value="">全部</option>
-            <option value="TRUCK_USES_PASSENGER_OBU">货车套用OBU</option>
-            <option value="ENTRY_EXIT_MISMATCH">出入口不一致</option>
-          </select>
+          <div className="multi-select-chips">
+            {FRAUD_TYPE_FILTER_OPTIONS.map(opt => {
+              const active = filters.fraudTypes.includes(opt.value)
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`chip ${active ? 'chip-active' : ''}`}
+                  onClick={() => toggleFraudType(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+            {filters.fraudTypes.length > 0 && (
+              <button
+                type="button"
+                className="chip chip-clear"
+                onClick={() => setFilters({ ...filters, fraudTypes: [] })}
+              >
+                清除
+              </button>
+            )}
+          </div>
         </div>
         <div className="filter-group">
           <span className="filter-label">处理状态:</span>
@@ -214,7 +266,7 @@ function SuspectList() {
           </select>
         </div>
         <div className="filter-group" style={{ marginLeft: 'auto', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
-          💡 提示: 点击表格行查看详情
+          💡 提示: 点击 chip 多选；点击表格行查看详情
         </div>
       </div>
 
@@ -270,8 +322,8 @@ function SuspectList() {
                       <td><span className="mono">#{s.id}</span></td>
                       <td><span className="mono">{s.passid}</span></td>
                       <td>
-                        <span className={`badge ${s.fraud_type === 'TRUCK_USES_PASSENGER_OBU' ? 'badge-purple' : 'badge-info'}`}>
-                          {s.fraud_type === 'TRUCK_USES_PASSENGER_OBU' ? '🚛 货车套OBU' : '🚗 出入口'}
+                        <span className={`badge ${FRAUD_TYPE_BADGE_CLASS[s.fraud_type] || 'badge-info'}`}>
+                          {FRAUD_TYPE_LABEL[s.fraud_type] || s.fraud_type}
                         </span>
                       </td>
                       <td><span style={{fontWeight: 500}}>{s.entry_vehicle_id || '-'}</span></td>
