@@ -1,7 +1,11 @@
-"""批量 LLM 判定可疑车辆。
+"""批量 AI 复核可疑车辆（走 vehicle-ai-service 公共服务）。
 
-后台调度（LLM_VERIFY）和 trip_aggregator 检测完可疑记录后都用这个入口。
-并发：ThreadPoolExecutor + max_workers 上限避免打爆 MaaS。
+后台调度（AI_VERIFY task_type）和 trip_aggregator 检测完可疑记录后都用这个入口。
+并发：ThreadPoolExecutor + max_workers 上限避免打爆公共服务。
+
+注：函数/日志关键字从 llm_* 改为 ai_verify_*；audit_results 表字段
+(llm_is_same_vehicle / llm_confidence / llm_reason / llm_model / llm_checked_at)
+保留原名，留待后续 schema 迁移统一改 ai_verify_*。
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -19,7 +23,7 @@ def _iso_now() -> str:
 
 
 def _process_one(row: Dict[str, Any]) -> Tuple[str, Optional[str]]:
-    """单条处理：调 MaaS 比对，OK 则写库。返回 (status, error_code)。
+    """单条处理：调公共服务比对，OK 则写库。返回 (status, error_code)。
     status ∈ {'ok', 'skipped'}; error_code 仅 skipped 时有值。
     """
     passid = row.get('passid')
@@ -30,19 +34,19 @@ def _process_one(row: Dict[str, Any]) -> Tuple[str, Optional[str]]:
     try:
         result = compare_vehicles_by_passid(passid)
     except Exception as e:
-        logger.error("llm_batch: compare_vehicles_by_passid(%s) raised: %s", passid, e)
+        logger.error("ai_verify_batch: compare_vehicles_by_passid(%s) raised: %s", passid, e)
         return 'skipped', f"exception:{e}"
 
     if not isinstance(result, dict) or 'error' in result:
         err_code = (result or {}).get('error') if isinstance(result, dict) else 'no_result'
-        logger.info("llm_batch: skip suspect_id=%s passid=%s reason=%s",
+        logger.info("ai_verify_batch: skip suspect_id=%s passid=%s reason=%s",
                     suspect_id, passid, err_code)
         return 'skipped', err_code
 
     required = ('is_same_vehicle', 'confidence', 'reason')
     missing = [k for k in required if k not in result]
     if missing:
-        logger.warning("llm_batch: incomplete verdict for suspect_id=%s missing=%s",
+        logger.warning("ai_verify_batch: incomplete verdict for suspect_id=%s missing=%s",
                        suspect_id, missing)
         return 'skipped', f"incomplete:{missing}"
 
@@ -57,8 +61,8 @@ def _process_one(row: Dict[str, Any]) -> Tuple[str, Optional[str]]:
     return 'ok', None
 
 
-def run_llm_batch_for_suspects(limit: int = 50, max_workers: int = 4) -> Dict[str, Any]:
-    """取最多 limit 条待判定记录，并发跑 LLM 写回。
+def run_ai_verify_batch_for_suspects(limit: int = 50, max_workers: int = 4) -> Dict[str, Any]:
+    """取最多 limit 条待 AI 复核记录，并发跑公共服务写回。
 
     Returns:
         {'processed': N, 'succeeded': M, 'skipped': K, 'errors': [str, ...]}

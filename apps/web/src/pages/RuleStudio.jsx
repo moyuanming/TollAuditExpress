@@ -16,6 +16,203 @@ const FRAUD_TYPE_LABEL = FRAUD_TYPE_OPTIONS.reduce((m, o) => {
   return m
 }, {})
 
+const FRAUD_TYPE_GUIDE = {
+  TRUCK_AS_CAR: {
+    title: '货套客（TRUCK_AS_CAR）',
+    desc: '货车使用客车 OBU 或套用客车车型通行，按客车费率缴费以逃避通行费差额。',
+    logic: '核心思路：入口/门架采集的车辆类型与 OBU 登记车型不一致，且实际车型为货车、OBU 车型为客车。典型条件：$trip.entry_vehicle_type ≠ 1（非客车）且 $trip.obu_vehicle_type = 1（OBU 为客车）。评分可结合门架数量、路径长度等加权。',
+    fields: ['entry_vehicle_type', 'obu_vehicle_type', 'gantry_count', 'actual_vehicle_type']
+  },
+  ENTRY_EXIT_MISMATCH: {
+    title: '出入口不一致（ENTRY_EXIT_MISMATCH）',
+    desc: '车辆入口站与出口站不匹配正常行驶路径，可能存在倒卡、换卡或路径造假行为。',
+    logic: '核心思路：入口站与出口站之间的合理路径距离/门架序列与实际采集数据不匹配。典型条件：$trip.entry_station 与 $trip.exit_station 的拓扑距离超出阈值，或中间门架序列不在最短路径上。',
+    fields: ['entry_station', 'exit_station', 'gantry_count', 'expected_gantry_count', 'path_distance']
+  },
+  GATEWAY_ANOMALY: {
+    title: '门架异常（GATEWAY_ANOMALY）',
+    desc: '门架交易数据异常，包括门架漏读、重复交易、时间倒挂或信号屏蔽等情况。',
+    logic: '核心思路：门架交易数量与预期不符（过多/过少），或交易时间序列不单调递增。典型条件：$trip.gantry_count 与预期门架数偏差超过阈值，或存在时间倒挂 $trip.has_time_reversal = true。',
+    fields: ['gantry_count', 'expected_gantry_count', 'has_time_reversal', 'duplicate_gantry_count', 'missing_gantry_count']
+  },
+  VEHICLE_TYPE_DOWNGRADE: {
+    title: '大车小标（VEHICLE_TYPE_DOWNGRADE）',
+    desc: '大型车辆登记为小型车辆车型，按低费率缴费，造成通行费损失。',
+    logic: '核心思路：实际车辆类型（轴数/重量/外形）与 OBU 登记车型不一致，且实际车型 > 登记车型。典型条件：$trip.actual_axle_count > $trip.obu_axle_count，或 $trip.actual_weight 超出登记车型限载。',
+    fields: ['actual_axle_count', 'obu_axle_count', 'actual_weight', 'obu_weight_limit', 'actual_vehicle_type', 'obu_vehicle_type']
+  },
+  SAME_PLATE_DIFF_VEHICLE: {
+    title: '同牌不同车（SAME_PLATE_DIFF_VEHICLE）',
+    desc: '同一车牌号在不同时段/站点被不同物理车辆使用，可能存在套牌或 OBU 挪用。',
+    logic: '核心思路：同一车牌在不同交易中出现不同的车辆特征（颜色/车型/轴数）。典型条件：$trip.plate_color 变化 或 $trip.vehicle_fingerprint 不一致。评分可结合特征差异程度和出现频次。',
+    fields: ['plate_color', 'vehicle_fingerprint', 'axle_count', 'vehicle_type', 'occurrence_count']
+  },
+  OBU_UNBIND: {
+    title: 'OBU 借用（OBU_UNBIND）',
+    desc: 'OBU 设备与登记车辆不匹配，OBU 被安装到其他车辆上使用，逃避一车一设备监管。',
+    logic: '核心思路：OBU 编号对应的车辆信息与实际通行车辆不一致。典型条件：$trip.obu_registered_plate ≠ $trip.actual_plate，或 $trip.obu_vehicle_type ≠ $trip.actual_vehicle_type。评分可结合不匹配字段数量。',
+    fields: ['obu_registered_plate', 'actual_plate', 'obu_vehicle_type', 'actual_vehicle_type', 'mismatch_count']
+  },
+  OBU_SHIELD: {
+    title: 'OBU 屏蔽（OBU_SHIELD）',
+    desc: 'OBU 设备信号被屏蔽或关闭，导致门架无法正常读取交易，逃避路径追踪和计费。',
+    logic: '核心思路：门架漏读率异常偏高，或 OBU 在应覆盖门架区间内无交易记录。典型条件：$trip.missing_gantry_ratio > 阈值，或 $trip.obu_signal_lost = true。评分可结合漏读比例和路径长度。',
+    fields: ['missing_gantry_ratio', 'obu_signal_lost', 'expected_gantry_count', 'actual_gantry_count', 'signal_strength']
+  }
+}
+
+const OPERATOR_GUIDE = [
+  { op: 'and', args: '2+', desc: '逻辑与 — 所有子条件都为真时为真' },
+  { op: 'or', args: '2+', desc: '逻辑或 — 任一子条件为真时为真' },
+  { op: 'not', args: '1', desc: '逻辑非 — 取反' },
+  { op: 'eq', args: '2', desc: '等于 — left == right' },
+  { op: 'ne', args: '2', desc: '不等于 — left != right' },
+  { op: 'gt', args: '2', desc: '大于 — left > right' },
+  { op: 'lt', args: '2', desc: '小于 — left < right' },
+  { op: 'gte', args: '2', desc: '大于等于 — left >= right' },
+  { op: 'lte', args: '2', desc: '小于等于 — left <= right' },
+  { op: 'in', args: '2', desc: '包含 — needle in haystack' },
+  { op: 'add', args: '2+', desc: '加法 — 所有参数求和' },
+  { op: 'sub', args: '2+', desc: '减法 — 依次相减' },
+  { op: 'mul', args: '2+', desc: '乘法 — 依次相乘' },
+  { op: 'div', args: '2+', desc: '除法 — 依次相除（除零报错）' },
+  { op: 'count', args: '1', desc: '计数 — 返回集合长度' },
+  { op: 'if', args: '3', desc: '条件 — if(条件, 真值, 假值)' }
+]
+
+const FIELD_LABEL = {
+  gantry_count: '门架数量',
+  entry_vehicle_type: '入口车型',
+  exit_vehicle_type: '出口车型',
+  obu_vehicle_type: 'OBU车型',
+  actual_vehicle_type: '实际车型',
+  entry_station: '入口站',
+  exit_station: '出口站',
+  threshold: '阈值',
+  risk_score: '风险分值',
+  missing_gantry_ratio: '漏读比例',
+  obu_signal_lost: 'OBU信号丢失',
+  has_time_reversal: '时间倒挂',
+  actual_axle_count: '实际轴数',
+  obu_axle_count: 'OBU轴数',
+  actual_weight: '实际重量',
+  obu_weight_limit: 'OBU限载',
+  plate_color: '车牌颜色',
+  vehicle_fingerprint: '车辆指纹',
+  axle_count: '轴数',
+  vehicle_type: '车型',
+  occurrence_count: '出现次数',
+  obu_registered_plate: 'OBU登记车牌',
+  actual_plate: '实际车牌',
+  mismatch_count: '不匹配数',
+  expected_gantry_count: '预期门架数',
+  actual_gantry_count: '实际门架数',
+  duplicate_gantry_count: '重复门架数',
+  missing_gantry_count: '漏读门架数',
+  signal_strength: '信号强度',
+  path_distance: '路径距离'
+}
+
+const OP_LABEL = {
+  and: '并且', or: '或者', not: '非',
+  eq: '等于', ne: '不等于', gt: '大于', lt: '小于',
+  gte: '大于等于', lte: '小于等于', in: '属于',
+  add: '相加', sub: '相减', mul: '相乘', div: '相除',
+  count: '计数', if: '如果'
+}
+
+function humanizeField(path) {
+  if (!path || typeof path !== 'string') return String(path)
+  if (path.startsWith('$trip.')) {
+    const key = path.slice(6)
+    return FIELD_LABEL[key] || key
+  }
+  return path
+}
+
+function humanizeValue(v) {
+  if (v === true || v === 'true') return '真'
+  if (v === false || v === 'false') return '假'
+  if (v === null || v === undefined) return '空'
+  if (typeof v === 'string' && v.startsWith('$trip.')) return humanizeField(v)
+  return String(v)
+}
+
+function exprToChinese(expr, indent = 0) {
+  const pad = '  '.repeat(indent)
+  if (typeof expr === 'boolean') return `${pad}${expr ? '真' : '假'}`
+  if (typeof expr === 'number') return `${pad}${expr}`
+  if (typeof expr === 'string') {
+    if (expr.startsWith('$trip.')) return `${pad}${humanizeField(expr)}`
+    return `${pad}${expr}`
+  }
+  if (!Array.isArray(expr) || expr.length === 0) return `${pad}???`
+
+  const [op, ...args] = expr
+  const opName = OP_LABEL[op] || op
+
+  if (op === 'and' || op === 'or') {
+    const lines = args.map((a, i) => {
+      const child = exprToChinese(a, indent + 1).trim()
+      return `${'  '.repeat(indent + 1)}(${i + 1}) ${child}`
+    })
+    return `${pad}${opName}:\n${lines.join('\n')}`
+  }
+
+  if (op === 'not') {
+    return `${pad}非(${exprToChinese(args[0], 0).trim()})`
+  }
+
+  if (['eq', 'ne', 'gt', 'lt', 'gte', 'lte'].includes(op)) {
+    const left = exprToChinese(args[0], 0).trim()
+    const right = exprToChinese(args[1], 0).trim()
+    return `${pad}${left} ${opName} ${right}`
+  }
+
+  if (op === 'in') {
+    const needle = exprToChinese(args[0], 0).trim()
+    const haystack = args[1]
+    let setStr
+    if (Array.isArray(haystack)) {
+      setStr = haystack.map(v => humanizeValue(v)).join(', ')
+    } else {
+      setStr = exprToChinese(haystack, 0).trim()
+    }
+    return `${pad}${needle} ${opName} [${setStr}]`
+  }
+
+  if (['add', 'sub', 'mul', 'div'].includes(op)) {
+    const parts = args.map(a => exprToChinese(a, 0).trim())
+    const symbol = { add: '+', sub: '-', mul: '×', div: '÷' }[op]
+    return `${pad}${parts.join(` ${symbol} `)}`
+  }
+
+  if (op === 'count') {
+    return `${pad}计数(${exprToChinese(args[0], 0).trim()})`
+  }
+
+  if (op === 'if') {
+    const cond = exprToChinese(args[0], 0).trim()
+    const yes = exprToChinese(args[1], 0).trim()
+    const no = exprToChinese(args[2], 0).trim()
+    return `${pad}如果(${cond}) 则 ${yes} 否则 ${no}`
+  }
+
+  return `${pad}${opName}(${args.map(a => exprToChinese(a, 0).trim()).join(', ')})`
+}
+
+function ruleExprToReadable(ruleExprStr) {
+  let expr
+  try {
+    expr = typeof ruleExprStr === 'string' ? JSON.parse(ruleExprStr) : ruleExprStr
+  } catch {
+    return { whenText: '（表达式解析失败）', scoreText: '' }
+  }
+  const whenText = expr.when ? exprToChinese(expr.when) : '（无条件，始终触发）'
+  const scoreText = expr.score ? exprToChinese(expr.score) : '（无评分，默认 0）'
+  return { whenText, scoreText }
+}
+
 const SEVERITY_LABEL = {
   1: { label: '低', color: 'badge-info' },
   2: { label: '中', color: 'badge-warning' },
@@ -55,6 +252,8 @@ function RuleStudio() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
+  const [expandedRule, setExpandedRule] = useState(null)
 
   useEffect(() => {
     loadRules()
@@ -238,6 +437,13 @@ function RuleStudio() {
         <button className="btn btn-primary" onClick={openCreate} style={{ marginLeft: 12 }}>
           + 新建规则
         </button>
+        <button
+          className={`btn btn-sm ${showGuide ? 'btn-secondary' : 'btn-secondary'}`}
+          onClick={() => setShowGuide(!showGuide)}
+          style={{ marginLeft: 6 }}
+        >
+          {showGuide ? '收起说明' : '📖 规则说明'}
+        </button>
       </div>
 
       <div className="filter-section">
@@ -267,9 +473,87 @@ function RuleStudio() {
           </select>
         </div>
         <div className="filter-group" style={{ marginLeft: 'auto', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
-          💡 DSL 操作符白名单：eq ne gt lt gte lte and or not in add sub mul div count if
+          💡 点击"规则说明"查看欺诈类型定义与 DSL 语法
         </div>
       </div>
+
+      {showGuide && (
+        <div className="rule-guide-panel" style={{
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border-primary)',
+          borderRadius: 'var(--radius-md)',
+          padding: '1.25rem 1.5rem',
+          marginBottom: '1rem'
+        }}>
+          <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+            📖 欺诈类型定义与检测逻辑
+          </h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '0.75rem' }}>
+            {Object.entries(FRAUD_TYPE_GUIDE).map(([key, guide]) => (
+              <div key={key} style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.75rem 1rem'
+              }}>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 4, color: 'var(--text-primary)' }}>
+                  {guide.title}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  {guide.desc}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--accent-blue)', marginBottom: 4, lineHeight: 1.5 }}>
+                  <strong>检测逻辑：</strong>{guide.logic}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+                  常用字段：{guide.fields.map(f => `$trip.${f}`).join('、')}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+            🔧 DSL 操作符参考
+          </h4>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gap: '0.25rem 1rem',
+            fontSize: '0.75rem'
+          }}>
+            {OPERATOR_GUIDE.map(item => (
+              <div key={item.op} style={{ display: 'flex', gap: 6, padding: '2px 0' }}>
+                <code style={{
+                  background: 'var(--bg-tertiary)',
+                  padding: '1px 6px',
+                  borderRadius: 3,
+                  fontFamily: 'monospace',
+                  fontWeight: 600,
+                  color: 'var(--accent-purple)',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {item.op}
+                </code>
+                <span style={{ color: 'var(--text-tertiary)' }}>({item.args})</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{item.desc}</span>
+              </div>
+            ))}
+          </div>
+
+          <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+            📐 规则求值流程
+          </h4>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+            <ol style={{ paddingLeft: '1.2rem' }}>
+              <li><strong>when 条件求值</strong> — 对行程数据 ($trip) 执行 when 表达式，返回 true/false</li>
+              <li><strong>score 评分求值</strong> — when 为 true 时，执行 score 表达式计算风险分值 (0~1)</li>
+              <li><strong>限幅</strong> — 风险分值限制在 [0, 1] 区间</li>
+              <li><strong>阈值比对</strong> — risk_score ≥ threshold 则标记为可疑 (is_suspicious=1)</li>
+              <li><strong>dry-run</strong> — 试运行模式下不写入正式可疑队列 (is_suspicious=0)</li>
+            </ol>
+          </div>
+        </div>
+      )}
 
       <div className="table-panel">
         <div className="table-wrapper">
@@ -284,7 +568,7 @@ function RuleStudio() {
                 <th style={{ width: 90 }}>Dry Run</th>
                 <th style={{ width: 90 }}>启用</th>
                 <th style={{ width: 140 }}>更新时间</th>
-                <th style={{ width: 220 }}>操作</th>
+                <th style={{ width: 260 }}>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -304,11 +588,15 @@ function RuleStudio() {
                     </div>
                   </td>
                 </tr>
-              ) : rules.map(r => {
+              ) : rules.flatMap(r => {
                 const sev = SEVERITY_LABEL[r.severity] || { label: r.severity, color: 'badge-info' }
                 const isEnabled = r.enabled === 1 || r.enabled === true
                 const isDryRun = r.dry_run === 1 || r.dry_run === true
-                return (
+                const isExpanded = expandedRule === r.id
+                const { whenText, scoreText } = ruleExprToReadable(r.rule_expr)
+                const guide = FRAUD_TYPE_GUIDE[r.fraud_type]
+
+                const mainRow = (
                   <tr key={r.id}>
                     <td><span className="mono">#{r.id}</span></td>
                     <td>
@@ -350,6 +638,13 @@ function RuleStudio() {
                     <td>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         <button
+                          className={`btn btn-sm ${isExpanded ? 'btn-primary' : 'btn-secondary'}`}
+                          onClick={() => setExpandedRule(isExpanded ? null : r.id)}
+                          title="查看规则逻辑详情"
+                        >
+                          {isExpanded ? '收起' : '详情'}
+                        </button>
+                        <button
                           className="btn btn-sm btn-secondary"
                           onClick={() => openEdit(r)}
                         >
@@ -379,6 +674,109 @@ function RuleStudio() {
                     </td>
                   </tr>
                 )
+
+                const detailRow = isExpanded ? (
+                  <tr key={`${r.id}-detail`}>
+                    <td colSpan={9} style={{ padding: 0 }}>
+                      <div style={{
+                        background: 'var(--bg-secondary)',
+                        borderTop: '2px solid var(--accent-blue)',
+                        padding: '1rem 1.5rem',
+                        fontSize: '0.8rem'
+                      }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem 2rem' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--accent-blue)', marginBottom: 6 }}>
+                              📋 欺诈类型说明
+                            </div>
+                            {guide ? (
+                              <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                <div style={{ marginBottom: 4 }}>{guide.desc}</div>
+                                <div style={{ color: 'var(--accent-purple)', fontSize: '0.75rem' }}>
+                                  {guide.logic}
+                                </div>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.7rem', marginTop: 4 }}>
+                                  常用字段：{guide.fields.map(f => (
+                                    <code key={f} style={{ background: 'var(--bg-tertiary)', padding: '0 3px', borderRadius: 2, margin: '0 2px' }}>
+                                      ${`{trip.${f}}`}
+                                    </code>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ color: 'var(--text-tertiary)' }}>无说明</div>
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--accent-blue)', marginBottom: 6 }}>
+                              🔍 规则逻辑解读
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                              <div style={{ marginBottom: 8 }}>
+                                <strong style={{ color: 'var(--text-primary)' }}>触发条件 (when)：</strong>
+                                <pre style={{
+                                  margin: '4px 0',
+                                  padding: '6px 10px',
+                                  background: 'var(--bg-primary)',
+                                  border: '1px solid var(--border-primary)',
+                                  borderRadius: 'var(--radius-sm)',
+                                  fontFamily: 'inherit',
+                                  fontSize: '0.78rem',
+                                  whiteSpace: 'pre-wrap',
+                                  color: 'var(--text-primary)'
+                                }}>
+                                  {whenText}
+                                </pre>
+                              </div>
+                              <div>
+                                <strong style={{ color: 'var(--text-primary)' }}>评分公式 (score)：</strong>
+                                <pre style={{
+                                  margin: '4px 0',
+                                  padding: '6px 10px',
+                                  background: 'var(--bg-primary)',
+                                  border: '1px solid var(--border-primary)',
+                                  borderRadius: 'var(--radius-sm)',
+                                  fontFamily: 'inherit',
+                                  fontSize: '0.78rem',
+                                  whiteSpace: 'pre-wrap',
+                                  color: 'var(--text-primary)'
+                                }}>
+                                  {scoreText}
+                                </pre>
+                              </div>
+                              <div style={{ marginTop: 6, fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
+                                当评分 ≥ 阈值 ({Number(r.threshold).toFixed(2)}) 时标记为可疑
+                                {r.dry_run ? '（当前为试运行，不写入正式队列）' : '（正式模式，写入可疑队列）'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-primary)' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--accent-blue)', marginBottom: 4, fontSize: '0.78rem' }}>
+                            💻 原始表达式 (JSON)
+                          </div>
+                          <pre style={{
+                            margin: 0,
+                            padding: '6px 10px',
+                            background: 'var(--bg-primary)',
+                            border: '1px solid var(--border-primary)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontFamily: 'monospace',
+                            fontSize: '0.72rem',
+                            whiteSpace: 'pre-wrap',
+                            color: 'var(--text-tertiary)',
+                            maxWidth: '100%',
+                            overflow: 'auto'
+                          }}>
+                            {typeof r.rule_expr === 'string' ? r.rule_expr : JSON.stringify(r.rule_expr, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null
+
+                return [mainRow, detailRow]
               })}
             </tbody>
           </table>
@@ -479,7 +877,7 @@ function RuleStudio() {
                     spellCheck={false}
                   />
                   <span className="form-hint">
-                    字段访问以 <code>$trip.</code> 开头；仅支持白名单操作符（eq ne gt lt gte lte and or not in add sub mul div count if）
+                    字段访问以 <code>$trip.</code> 开头；点击页面上方"规则说明"查看操作符与字段说明
                   </span>
                 </div>
 

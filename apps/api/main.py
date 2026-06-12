@@ -14,7 +14,7 @@ import os
 from apps.api.core.config import CORS_ORIGINS
 from apps.api.core.auth import auth_middleware
 from apps.api.database.doris_connection import init_doris
-from apps.api.routers import audit, health, tasks, oauth
+from apps.api.routers import audit, health, tasks, oauth, rules
 from apps.api.services.task_scheduler import start_scheduler
 
 FRONTEND_DIR = os.environ.get("FRONTEND_DIR", os.path.join(os.path.dirname(__file__), "..", "web", "dist"))
@@ -52,6 +52,7 @@ async def api_key_middleware(request: Request, call_next):
 app.include_router(health.router, tags=["health"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
+app.include_router(rules.router, prefix="/api/audit", tags=["rules"])
 app.include_router(oauth.router)
 
 

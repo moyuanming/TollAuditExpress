@@ -333,17 +333,29 @@ async def stream_aggregation(task_id: str, request: Request):
 
 @router.get("/suspects", response_model=SuspectListResponse)
 async def get_suspects(
-    fraud_type: Optional[str] = None,
+    fraud_types: Optional[list] = Query(None, description="欺诈类型列表（可重复或逗号分隔）"),
     process_status: Optional[str] = None,
     llm_result: Optional[str] = Query(None, description="same | different | pending"),
     limit: int = 100,
     offset: int = 0
 ):
     """获取可疑记录列表"""
+    normalized_types: Optional[list] = None
+    if fraud_types:
+        flat: list = []
+        for item in fraud_types:
+            if item is None:
+                continue
+            for part in str(item).split(","):
+                part = part.strip()
+                if part:
+                    flat.append(part)
+        if flat:
+            normalized_types = flat
     repo = AuditRepository()
-    suspects = repo.get_suspects(fraud_type=fraud_type, process_status=process_status,
+    suspects = repo.get_suspects(fraud_types=normalized_types, process_status=process_status,
                                  llm_result=llm_result, limit=limit, offset=offset)
-    total = repo.get_suspects_count(fraud_type=fraud_type, process_status=process_status,
+    total = repo.get_suspects_count(fraud_types=normalized_types, process_status=process_status,
                                     llm_result=llm_result)
     return SuspectListResponse(suspects=suspects, total=total)
 

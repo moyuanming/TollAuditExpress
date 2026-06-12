@@ -2,9 +2,17 @@
 
 from typing import Optional, List, Dict
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from apps.api.database.doris_connection import get_connection
+
+
+# 容器是 UTC，DB 走北京时间 — 统一用 Asia/Shanghai 写入，避免对比错位
+_BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def _now() -> str:
+    return datetime.now(_BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
 
 class TaskRepository:
@@ -13,7 +21,7 @@ class TaskRepository:
     def create_task(self, task_data: Dict) -> int:
         with get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now = _now()
             filter_rules = json.dumps(task_data.get('filter_rules', {})) if task_data.get('filter_rules') else None
             schedule_config = json.dumps(task_data.get('schedule_config', {}))
 
@@ -81,7 +89,7 @@ class TaskRepository:
                 return False
 
             fields.append("updated_at = %s")
-            values.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            values.append(_now())
             values.append(task_id)
 
             cursor.execute(f"UPDATE scheduled_tasks SET {', '.join(fields)} WHERE id = %s", values)
@@ -99,7 +107,7 @@ class TaskRepository:
     def get_due_tasks(self) -> List[Dict]:
         with get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now = _now()
             cursor.execute(
                 "SELECT * FROM scheduled_tasks WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= %s",
                 (now,)
@@ -109,7 +117,7 @@ class TaskRepository:
     def update_after_run(self, task_id: int, next_run_at: str):
         with get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now = _now()
             cursor.execute(
                 "UPDATE scheduled_tasks SET last_run_at = %s, next_run_at = %s, updated_at = %s WHERE id = %s",
                 (now, next_run_at, now, task_id)
@@ -117,20 +125,23 @@ class TaskRepository:
             conn.commit()
 
     def create_execution(self, task_id: int) -> int:
+        # Doris 的 auto_increment 不可靠（新行 id 可能小于既有 max），用 Python 显式生成 id
+        import time
         with get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now = _now()
+            new_id = int(time.time() * 1000)  # 毫秒时间戳，单机单进程内单调递增
             cursor.execute(
-                "INSERT INTO task_executions (task_id, status, started_at) VALUES (%s, 'running', %s)",
-                (task_id, now)
+                "INSERT INTO task_executions (id, task_id, status, started_at) VALUES (%s, %s, 'running', %s)",
+                (new_id, task_id, now)
             )
             conn.commit()
-            return cursor.lastrowid
+            return new_id
 
     def complete_execution(self, execution_id: int, result_summary: Optional[Dict] = None, error_message: Optional[str] = None):
         with get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now = _now()
             status = 'failed' if error_message else 'completed'
             summary = json.dumps(result_summary) if result_summary else None
             cursor.execute(
@@ -153,3 +164,38 @@ class TaskRepository:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) as count FROM task_executions WHERE task_id = %s", (task_id,))
             return cursor.fetchone()['count']
+
+    def cleanup_stuck_executions(self, timeout_minutes: int) -> int:
+        """将超过 timeout_minutes 仍未结束的 running 记录标记为 failed，返回清理条数"""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE task_executions
+                   SET status = 'failed',
+                       completed_at = NOW(),
+                       error_message = CONCAT('执行超过 ', %s, ' 分钟未完成，自动标记为失败')
+                   WHERE status = 'running'
+                     AND started_at < DATE_SUB(NOW(), INTERVAL %s MINUTE)""",
+                (timeout_minutes, timeout_minutes)
+            )
+            conn.commit()
+            return cursor.rowcount
+
+    def get_execution(self, execution_id: int) -> Optional[Dict]:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM task_executions WHERE id = %s",
+                (execution_id,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def update_execution_logs(self, execution_id: int, logs: str):
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE task_executions SET logs = %s WHERE id = %s",
+                (logs, execution_id)
+            )
+            conn.commit()

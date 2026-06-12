@@ -40,10 +40,10 @@ CREATE TABLE IF NOT EXISTS audit_trips (
     exit_media_type TINYINT,
     exit_image_license VARCHAR(500),
     exit_image_trans VARCHAR(500),
-    gantry_count INT DEFAULT 0,
+    gantry_count INT DEFAULT "0",
     gantry_records JSON,
     audit_status VARCHAR(20) DEFAULT 'PENDING',
-    risk_score DOUBLE DEFAULT 0,
+    risk_score DOUBLE DEFAULT "0",
     entry_visual_type VARCHAR(20),
     exit_visual_type VARCHAR(20),
     fingerprint_sim DOUBLE,
@@ -68,8 +68,8 @@ CREATE TABLE IF NOT EXISTS audit_results (
     exit_vehicle_type TINYINT,
     exit_visual_type VARCHAR(20),
     exit_color VARCHAR(20),
-    is_suspicious TINYINT DEFAULT 0,
-    risk_score DOUBLE DEFAULT 0,
+    is_suspicious TINYINT DEFAULT "0",
+    risk_score DOUBLE DEFAULT "0",
     details JSON,
     process_status VARCHAR(20) DEFAULT 'UNPROCESSED',
     llm_is_same_vehicle TINYINT,
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     filter_rules JSON,
     schedule_type VARCHAR(20) NOT NULL DEFAULT 'interval',
     schedule_config JSON NOT NULL,
-    enabled TINYINT NOT NULL DEFAULT 1,
+    enabled TINYINT NOT NULL DEFAULT "1",
     last_run_at DATETIME,
     next_run_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -154,3 +154,47 @@ PROPERTIES (
     "replication_num" = "1",
     "enable_unique_key_merge_on_write" = "true"
 );
+
+-- 自进化稽核系统：检测规则引擎（支持规则可配置、热更新、dry-run）
+CREATE TABLE IF NOT EXISTS detection_rules (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    name VARCHAR(200) NOT NULL,
+    fraud_type VARCHAR(50) NOT NULL,
+    severity TINYINT DEFAULT "2" COMMENT '1=低 2=中 3=高',
+    description VARCHAR(1000),
+    rule_expr TEXT NOT NULL COMMENT 'JSON DSL: {when: [...], score: [...], detector: "..."}',
+    threshold DOUBLE DEFAULT "0.5",
+    enabled TINYINT DEFAULT "1",
+    dry_run TINYINT DEFAULT "0" COMMENT 'dry-run 模式：写入 audit_results 但 is_suspicious=0',
+    source VARCHAR(20) DEFAULT 'manual' COMMENT 'manual / miner / auto_tune',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+)
+UNIQUE KEY(id)
+DISTRIBUTED BY HASH(id) BUCKETS 2
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true"
+);
+
+-- 门架拓扑（手工录入，自动学习延后到阶段 2）
+CREATE TABLE IF NOT EXISTS gateway_topology (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    from_station VARCHAR(60) NOT NULL,
+    to_station VARCHAR(60) NOT NULL,
+    distance_km DOUBLE,
+    is_connected TINYINT DEFAULT "1",
+    notes VARCHAR(200),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+)
+UNIQUE KEY(id)
+DISTRIBUTED BY HASH(from_station) BUCKETS 4
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true"
+);
+
+-- audit_results 扩展字段：命中的规则 ID 与 dry-run 标记
+ALTER TABLE audit_results ADD COLUMN IF NOT EXISTS rule_id BIGINT COMMENT '命中的 detection_rules.id';
+ALTER TABLE audit_results ADD COLUMN IF NOT EXISTS dry_run TINYINT DEFAULT "0" COMMENT 'dry-run 模式标记';

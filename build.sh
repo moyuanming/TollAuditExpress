@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # TollAuditExpress 构建脚本
-# 编译前端 → 打包发布文件 → 生成 tar.gz 发布包
+# 跑全量测试 → 编译前端 → 打包发布文件 → 生成 tar.gz 发布包
 # ============================================================
 
 set -e
@@ -31,8 +31,17 @@ echo -e "${GREEN}  TollAuditExpress 发布构建${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
+# ---- 0. 跑全量测试(覆盖率门槛 60%) — 失败则直接退出,不进入前端构建 ----
+echo -e "${GREEN}[0/6] 跑全量测试(覆盖率门槛 60%)...${NC}"
+cd "$PROJECT_DIR"
+if ! python3 -m pytest tests/ -m "not slow" --cov=apps/api --cov-fail-under=60; then
+    echo -e "${RED}错误: pytest 失败或覆盖率不达标,中止发布${NC}"
+    exit 1
+fi
+echo -e "${GREEN}  测试通过${NC}"
+
 # ---- 1. 构建前端 ----
-echo -e "${GREEN}[1/5] 构建前端...${NC}"
+echo -e "${GREEN}[1/6] 构建前端...${NC}"
 
 if [ ! -f "$PROJECT_DIR/apps/web/package.json" ]; then
     echo -e "${RED}错误: 找不到 apps/web/package.json${NC}"
@@ -59,7 +68,7 @@ fi
 echo -e "${GREEN}  前端构建完成${NC}"
 
 # ---- 2. 检查必要文件 ----
-echo -e "${GREEN}[2/5] 检查必要文件...${NC}"
+echo -e "${GREEN}[2/6] 检查必要文件...${NC}"
 
 cd "$PROJECT_DIR"
 
@@ -80,7 +89,7 @@ done
 echo -e "${GREEN}  所有必要文件检查通过${NC}"
 
 # ---- 3. 创建发布目录 ----
-echo -e "${GREEN}[3/5] 准备发布文件...${NC}"
+echo -e "${GREEN}[3/6] 准备发布文件...${NC}"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/$RELEASE_NAME"
@@ -110,12 +119,6 @@ cp "$PROJECT_DIR/Dockerfile" "$BUILD_DIR/$RELEASE_NAME/"
 cp "$PROJECT_DIR/docker-compose.yml" "$BUILD_DIR/$RELEASE_NAME/"
 cp "$PROJECT_DIR/.env.example" "$BUILD_DIR/$RELEASE_NAME/.env.example"
 
-# 复制模型文件（如存在）
-if [ -f "$PROJECT_DIR/yolov8n.pt" ]; then
-    echo -e "${YELLOW}  注意: yolov8n.pt (~6.5MB) 将包含在发布包中${NC}"
-    cp "$PROJECT_DIR/yolov8n.pt" "$BUILD_DIR/$RELEASE_NAME/"
-fi
-
 # 创建 .env 模板
 cp "$PROJECT_DIR/.env.example" "$BUILD_DIR/$RELEASE_NAME/.env"
 
@@ -128,7 +131,7 @@ fi
 echo -e "${GREEN}  发布文件准备完成${NC}"
 
 # ---- 4. 打包 ----
-echo -e "${GREEN}[4/5] 打包发布包...${NC}"
+echo -e "${GREEN}[4/6] 打包发布包...${NC}"
 
 cd "$BUILD_DIR"
 tar -czf "$PROJECT_DIR/$RELEASE_NAME.tar.gz" "$RELEASE_NAME"
@@ -145,7 +148,7 @@ SIZE_MB=$((SIZE / 1024 / 1024))
 echo -e "${GREEN}  发布包大小: ${SIZE_MB}MB${NC}"
 
 # ---- 5. 清理 ----
-echo -e "${GREEN}[5/5] 清理临时文件...${NC}"
+echo -e "${GREEN}[5/6] 清理临时文件...${NC}"
 rm -rf "$BUILD_DIR"
 
 # ---- 完成 ----

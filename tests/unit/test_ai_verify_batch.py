@@ -1,4 +1,8 @@
-"""run_llm_batch_for_suspects 单元测试 — mock MaaS 比对 + 真实 SQLite 仓储。"""
+"""run_ai_verify_batch_for_suspects 单元测试 — mock vehicle-ai-service compare + 真实 SQLite 仓储。
+
+audit_results 表的 llm_* 字段 (llm_is_same_vehicle / llm_confidence / llm_reason / llm_model /
+llm_checked_at) 沿用旧名,留待后续 schema 迁移统一改 ai_verify_*。
+"""
 import os
 import sys
 import pytest
@@ -10,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def _seed_pending_suspect(audit_repo, *, passid='P1', fraud_type='TRUCK_USES_PASSENGER_OBU',
                           visual='truck'):
-    """通过 audit_trips + audit_results 插入一条"待 LLM 判定"的可疑记录。"""
+    """通过 audit_trips + audit_results 插入一条"待 AI 复核"的可疑记录。"""
     from apps.api.database.connection import get_connection
 
     with get_connection() as conn:
@@ -37,21 +41,21 @@ def _seed_pending_suspect(audit_repo, *, passid='P1', fraud_type='TRUCK_USES_PAS
     return sid
 
 
-class TestRunLlmBatchForSuspects:
+class TestRunAiVerifyBatchForSuspects:
     def test_empty_db_returns_zero(self, temp_db):
-        from apps.api.services.llm_batch import run_llm_batch_for_suspects
-        result = run_llm_batch_for_suspects(limit=50, max_workers=2)
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
+        result = run_ai_verify_batch_for_suspects(limit=50, max_workers=2)
         assert result == {'processed': 0, 'succeeded': 0, 'skipped': 0, 'errors': []}
 
     def test_pending_suspect_with_visual_types_is_processed(self, temp_db):
         from apps.api.database.repositories.audit_repository import AuditRepository
-        from apps.api.services.llm_batch import run_llm_batch_for_suspects
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
 
         audit_repo = AuditRepository()
         sid = _seed_pending_suspect(audit_repo, passid='P_OK')
 
         with patch(
-            'apps.api.services.llm_batch.compare_vehicles_by_passid',
+            'apps.api.services.ai_verify_batch.compare_vehicles_by_passid',
             return_value={
                 'passid': 'P_OK',
                 'is_same_vehicle': True,
@@ -63,7 +67,7 @@ class TestRunLlmBatchForSuspects:
                 'elapsed_ms': 1234,
             },
         ):
-            result = run_llm_batch_for_suspects(limit=50, max_workers=2)
+            result = run_ai_verify_batch_for_suspects(limit=50, max_workers=2)
 
         assert result['processed'] == 1
         assert result['succeeded'] == 1
@@ -79,13 +83,13 @@ class TestRunLlmBatchForSuspects:
 
     def test_different_vehicle_verdict_written(self, temp_db):
         from apps.api.database.repositories.audit_repository import AuditRepository
-        from apps.api.services.llm_batch import run_llm_batch_for_suspects
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
 
         audit_repo = AuditRepository()
         sid = _seed_pending_suspect(audit_repo, passid='P_DIFF')
 
         with patch(
-            'apps.api.services.llm_batch.compare_vehicles_by_passid',
+            'apps.api.services.ai_verify_batch.compare_vehicles_by_passid',
             return_value={
                 'is_same_vehicle': False,
                 'confidence': 0.88,
@@ -93,7 +97,7 @@ class TestRunLlmBatchForSuspects:
                 'model': 'qwen2.5-vl-72b',
             },
         ):
-            result = run_llm_batch_for_suspects(limit=50, max_workers=2)
+            result = run_ai_verify_batch_for_suspects(limit=50, max_workers=2)
 
         assert result['succeeded'] == 1
         row = audit_repo.get_suspect_by_id(sid)
@@ -102,16 +106,16 @@ class TestRunLlmBatchForSuspects:
 
     def test_comparator_error_skips_suspect_no_verdict_written(self, temp_db):
         from apps.api.database.repositories.audit_repository import AuditRepository
-        from apps.api.services.llm_batch import run_llm_batch_for_suspects
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
 
         audit_repo = AuditRepository()
         sid = _seed_pending_suspect(audit_repo, passid='P_ERR')
 
         with patch(
-            'apps.api.services.llm_batch.compare_vehicles_by_passid',
+            'apps.api.services.ai_verify_batch.compare_vehicles_by_passid',
             return_value={'error': 'image_url_missing', 'field': 'entry_image_license'},
         ):
-            result = run_llm_batch_for_suspects(limit=50, max_workers=2)
+            result = run_ai_verify_batch_for_suspects(limit=50, max_workers=2)
 
         assert result['processed'] == 1
         assert result['succeeded'] == 0
@@ -120,13 +124,12 @@ class TestRunLlmBatchForSuspects:
         assert 'image_url_missing' in result['errors'][0]
 
         row = audit_repo.get_suspect_by_id(sid)
-        # 失败时不写入，下次 batch 可重试
+        # 失败时不写入,下次 batch 可重试
         assert row['llm_checked_at'] is None
         assert row['llm_is_same_vehicle'] is None
 
     def test_visual_type_missing_excluded_by_repo_filter(self, temp_db):
-        from apps.api.database.repositories.audit_repository import AuditRepository
-        from apps.api.services.llm_batch import run_llm_batch_for_suspects
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
         from apps.api.database.connection import get_connection
 
         # 缺 visual_type 的可疑记录
@@ -146,15 +149,15 @@ class TestRunLlmBatchForSuspects:
             """, (trip_id,))
             conn.commit()
 
-        with patch('apps.api.services.llm_batch.compare_vehicles_by_passid') as mock_cmp:
-            result = run_llm_batch_for_suspects(limit=50, max_workers=2)
+        with patch('apps.api.services.ai_verify_batch.compare_vehicles_by_passid') as mock_cmp:
+            result = run_ai_verify_batch_for_suspects(limit=50, max_workers=2)
             mock_cmp.assert_not_called()
 
         assert result['processed'] == 0
         assert result['succeeded'] == 0
 
     def test_processes_multiple_suspects_concurrently(self, temp_db):
-        from apps.api.services.llm_batch import run_llm_batch_for_suspects
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
         from apps.api.database.repositories.audit_repository import AuditRepository
 
         audit_repo = AuditRepository()
@@ -164,7 +167,7 @@ class TestRunLlmBatchForSuspects:
         ]
 
         with patch(
-            'apps.api.services.llm_batch.compare_vehicles_by_passid',
+            'apps.api.services.ai_verify_batch.compare_vehicles_by_passid',
             return_value={
                 'is_same_vehicle': True,
                 'confidence': 0.8,
@@ -172,7 +175,7 @@ class TestRunLlmBatchForSuspects:
                 'model': 'qwen2.5-vl-72b',
             },
         ) as mock_cmp:
-            result = run_llm_batch_for_suspects(limit=50, max_workers=4)
+            result = run_ai_verify_batch_for_suspects(limit=50, max_workers=4)
 
         assert result['processed'] == 5
         assert result['succeeded'] == 5
@@ -184,7 +187,7 @@ class TestRunLlmBatchForSuspects:
             assert row['llm_checked_at'] is not None
 
     def test_limit_caps_processing(self, temp_db):
-        from apps.api.services.llm_batch import run_llm_batch_for_suspects
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
         from apps.api.database.repositories.audit_repository import AuditRepository
 
         audit_repo = AuditRepository()
@@ -192,13 +195,13 @@ class TestRunLlmBatchForSuspects:
             _seed_pending_suspect(audit_repo, passid=f'P_L{i}')
 
         with patch(
-            'apps.api.services.llm_batch.compare_vehicles_by_passid',
+            'apps.api.services.ai_verify_batch.compare_vehicles_by_passid',
             return_value={
                 'is_same_vehicle': True, 'confidence': 0.9,
                 'reason': 'ok', 'model': 'qwen2.5-vl-72b',
             },
         ):
-            result = run_llm_batch_for_suspects(limit=3, max_workers=2)
+            result = run_ai_verify_batch_for_suspects(limit=3, max_workers=2)
 
         assert result['processed'] == 3
         assert result['succeeded'] == 3

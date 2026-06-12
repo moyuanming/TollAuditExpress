@@ -8,22 +8,16 @@ numpy>=1.24.0
 python-dotenv>=1.0.0
 starlette>=0.27.0
 
-# ML
-torch>=2.0.0
-torchvision>=0.15.0
-ultralytics>=8.0.0
-opencv-python-headless>=4.8.0
-Pillow>=10.0.0
-
-# LLM
-zhipuai>=2.0.0
-# volcenginesdkarkruntime>=1.0.0  # 已不在 PyPI 上；如需 DOUBAO/ARK 集成，请用 volcengine-python-sdk
-openai>=1.0.0
+# Vehicle AI capability is now provided by the standalone vehicle-ai-service
+# (deployed on the same target machine, port 8081). The main API only needs
+# the HTTP client below. Torch / torchvision / ultralytics / opencv / zhipuai /
+# openai have been moved to the public service and are no longer required here.
+httpx>=0.25.0
+tenacity>=8.2.0
 
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
-httpx>=0.25.0
 
 # Auth
 PyJWT[crypto]>=2.8.0

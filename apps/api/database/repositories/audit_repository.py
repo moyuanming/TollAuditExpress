@@ -147,7 +147,7 @@ class AuditRepository:
             cursor.execute("""
                 SELECT ar.entry_color, ar.exit_color,
                        ar.entry_visual_type, ar.exit_visual_type,
-                       ar.fingerprint_sim
+                       at.fingerprint_sim
                 FROM audit_results ar
                 JOIN audit_trips at ON ar.audit_trip_id = at.id
                 WHERE at.passid = %s

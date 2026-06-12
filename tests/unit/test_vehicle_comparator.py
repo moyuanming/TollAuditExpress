@@ -1,16 +1,32 @@
-"""compare_vehicles_by_passid 单元测试 — mock trip 聚合 + 并行下载 + MaaS 调用。"""
-import os
-import tempfile
-from io import BytesIO
-from unittest.mock import patch
+"""compare_vehicles_by_passid 单元测试 — mock aggregate_trip + AuditRepository + vehicle-ai-service compare。"""
+from unittest.mock import patch, MagicMock
 
-from apps.api.services.vehicle_comparator import compare_vehicles_by_passid
+from apps.api.services.vehicle_comparator import (
+    _fetch_visual_features,
+    compare_vehicles_by_passid,
+)
 
 
-def _fake_bytesio(content=b'fake-jpeg'):
-    bio = BytesIO(content)
-    bio.seek(0)
-    return bio
+def _fake_trip(passid='P1', entry_url='http://x/entry.jpg', exit_url='http://x/exit.jpg'):
+    return {
+        'passid': passid,
+        'entry_image_license': entry_url,
+        'exit_image_license': exit_url,
+        'entry_vehicle_id': '京A12345',
+        'exit_vehicle_id': '京A12345',
+        'entry_obu_id': 'OBU-001',
+        'exit_obu_id': 'OBU-001',
+    }
+
+
+def _fake_visual_features():
+    return {
+        'entry_color': 'blue',
+        'exit_color': 'blue',
+        'entry_visual_type': 'truck',
+        'exit_visual_type': 'truck',
+        'fingerprint_sim': 0.85,
+    }
 
 
 class TestCompareVehiclesByPassidGuards:
@@ -58,152 +74,151 @@ class TestCompareVehiclesByPassidGuards:
         assert result['field'] == 'exit_image_license'
 
 
-class TestCompareVehiclesByPassidImageDownload:
-    def test_image_download_failure_reports_per_url(self):
-        url_to_bytes = {
-            'http://x/entry.jpg': _fake_bytesio(),
-            'http://x/exit.jpg': None,
-        }
-        with patch(
-            'apps.api.services.vehicle_comparator.aggregate_trip',
-            return_value={
-                'passid': 'P2',
-                'entry_image_license': 'http://x/entry.jpg',
-                'exit_image_license': 'http://x/exit.jpg',
-            },
-        ), patch(
-            'apps.api.services.vehicle_comparator.download_images_parallel',
-            return_value=url_to_bytes,
-        ):
-            result = compare_vehicles_by_passid('P2')
-        assert result['error'] == 'image_download_failed'
-        assert result['entry_ok'] is True
-        assert result['exit_ok'] is False
-
-
 class TestCompareVehiclesByPassidHappyPath:
-    def test_writes_temp_files_and_cleans_up(self):
-        entry_url = 'http://x/entry.jpg'
-        exit_url = 'http://x/exit.jpg'
-        url_to_bytes = {entry_url: _fake_bytesio(b'AAA'), exit_url: _fake_bytesio(b'BBB')}
-
-        real_ntf = tempfile.NamedTemporaryFile
-        created_paths = []
-
-        def tracking_ntf(*args, **kwargs):
-            f = real_ntf(*args, **kwargs)
-            created_paths.append(f.name)
-            return f
-
+    def test_returns_formatted_verdict(self):
         with patch(
             'apps.api.services.vehicle_comparator.aggregate_trip',
-            return_value={
-                'passid': 'P3',
-                'entry_image_license': entry_url,
-                'exit_image_license': exit_url,
-            },
+            return_value=_fake_trip(),
         ), patch(
-            'apps.api.services.vehicle_comparator.download_images_parallel',
-            return_value=url_to_bytes,
+            'apps.api.services.vehicle_comparator._fetch_visual_features',
+            return_value=_fake_visual_features(),
         ), patch(
-            'apps.api.services.vehicle_comparator.tempfile.NamedTemporaryFile',
-            side_effect=tracking_ntf,
-        ), patch(
-            'apps.api.LLM.Maas.compare_vehicles',
-            return_value={
+            'apps.api.services.vehicle_comparator.get_client'
+        ) as mock_get_client:
+            mock_get_client.return_value.compare.return_value = {
                 'is_same_vehicle': True,
                 'confidence': 0.88,
                 'reason': '车牌一致',
                 'model': 'qwen2.5-vl-72b',
-            },
-        ) as mock_maas:
-            result = compare_vehicles_by_passid('P3')
+                'elapsed_ms': 432,
+            }
+            result = compare_vehicles_by_passid('P1')
 
         assert 'error' not in result
         assert result['is_same_vehicle'] is True
         assert result['confidence'] == 0.88
         assert result['reason'] == '车牌一致'
-        assert result['passid'] == 'P3'
-        assert result['entry_image_url'] == entry_url
-        assert result['exit_image_url'] == exit_url
+        assert result['passid'] == 'P1'
+        assert result['entry_image_url'] == 'http://x/entry.jpg'
+        assert result['exit_image_url'] == 'http://x/exit.jpg'
         assert result['model'] == 'qwen2.5-vl-72b'
-        assert 'elapsed_ms' in result
         assert isinstance(result['elapsed_ms'], int)
 
-        assert mock_maas.call_count == 1
-        passed_paths = mock_maas.call_args[0]
-        assert passed_paths[0] in created_paths
-        assert passed_paths[1] in created_paths
+        # 校验透传给 compare 的 9 项元数据
+        kwargs = mock_get_client.return_value.compare.call_args.kwargs
+        assert kwargs['entry_vehicle_id'] == '京A12345'
+        assert kwargs['entry_obu_id'] == 'OBU-001'
+        assert kwargs['entry_color'] == 'blue'
+        assert kwargs['entry_visual_type'] == 'truck'
+        assert kwargs['fingerprint_sim'] == 0.85
 
-        for p in created_paths:
-            assert not os.path.exists(p), f"temp file leaked: {p}"
-
-    def test_maas_returns_none_translates_to_unavailable(self):
-        url_to_bytes = {
-            'http://x/entry.jpg': _fake_bytesio(),
-            'http://x/exit.jpg': _fake_bytesio(),
-        }
+    def test_service_error_translates_to_unavailable(self):
         with patch(
             'apps.api.services.vehicle_comparator.aggregate_trip',
-            return_value={
-                'passid': 'P4',
-                'entry_image_license': 'http://x/entry.jpg',
-                'exit_image_license': 'http://x/exit.jpg',
-            },
+            return_value=_fake_trip(),
         ), patch(
-            'apps.api.services.vehicle_comparator.download_images_parallel',
-            return_value=url_to_bytes,
+            'apps.api.services.vehicle_comparator._fetch_visual_features',
+            return_value={},
         ), patch(
-            'apps.api.LLM.Maas.compare_vehicles',
-            return_value=None,
-        ):
-            result = compare_vehicles_by_passid('P4')
-        assert result['error'] == 'maas_unavailable'
-        assert 'empty result' in result['detail']
+            'apps.api.services.vehicle_comparator.get_client'
+        ) as mock_get_client:
+            mock_get_client.return_value.compare.return_value = {
+                'error': 'service_unavailable',
+                'detail': 'connection timeout',
+            }
+            result = compare_vehicles_by_passid('P1')
 
-    def test_maas_raises_exception_translates_to_unavailable(self):
-        url_to_bytes = {
-            'http://x/entry.jpg': _fake_bytesio(),
-            'http://x/exit.jpg': _fake_bytesio(),
-        }
+        assert result['error'] == 'service_unavailable'
+        assert 'connection timeout' in result['detail']
+
+    def test_service_raises_translates_to_unavailable(self):
         with patch(
             'apps.api.services.vehicle_comparator.aggregate_trip',
-            return_value={
-                'passid': 'P5',
-                'entry_image_license': 'http://x/entry.jpg',
-                'exit_image_license': 'http://x/exit.jpg',
-            },
+            return_value=_fake_trip(),
         ), patch(
-            'apps.api.services.vehicle_comparator.download_images_parallel',
-            return_value=url_to_bytes,
+            'apps.api.services.vehicle_comparator._fetch_visual_features',
+            return_value={},
         ), patch(
-            'apps.api.LLM.Maas.compare_vehicles',
-            side_effect=RuntimeError('timeout'),
-        ):
-            result = compare_vehicles_by_passid('P5')
-        assert result['error'] == 'maas_unavailable'
+            'apps.api.services.vehicle_comparator.get_client'
+        ) as mock_get_client:
+            mock_get_client.return_value.compare.side_effect = RuntimeError('timeout')
+            result = compare_vehicles_by_passid('P1')
+
+        assert result['error'] == 'service_unavailable'
         assert 'timeout' in result['detail']
 
-    def test_missing_fields_in_maas_response_returns_parse_error(self):
-        url_to_bytes = {
-            'http://x/entry.jpg': _fake_bytesio(),
-            'http://x/exit.jpg': _fake_bytesio(),
-        }
+    def test_missing_fields_in_response_returns_parse_error(self):
         with patch(
             'apps.api.services.vehicle_comparator.aggregate_trip',
-            return_value={
-                'passid': 'P6',
-                'entry_image_license': 'http://x/entry.jpg',
-                'exit_image_license': 'http://x/exit.jpg',
-            },
+            return_value=_fake_trip(),
         ), patch(
-            'apps.api.services.vehicle_comparator.download_images_parallel',
-            return_value=url_to_bytes,
+            'apps.api.services.vehicle_comparator._fetch_visual_features',
+            return_value={},
         ), patch(
-            'apps.api.LLM.Maas.compare_vehicles',
-            return_value={'is_same_vehicle': True},
-        ):
-            result = compare_vehicles_by_passid('P6')
+            'apps.api.services.vehicle_comparator.get_client'
+        ) as mock_get_client:
+            mock_get_client.return_value.compare.return_value = {'is_same_vehicle': True}
+            result = compare_vehicles_by_passid('P1')
+
         assert result['error'] == 'parse_error'
         assert 'confidence' in result['detail']
         assert 'reason' in result['detail']
+
+    def test_visual_features_optional_omits_none_values(self):
+        """视觉信号缺失时,只透传有值的字段给公共服务。"""
+        with patch(
+            'apps.api.services.vehicle_comparator.aggregate_trip',
+            return_value=_fake_trip(),
+        ), patch(
+            'apps.api.services.vehicle_comparator._fetch_visual_features',
+            return_value={},
+        ), patch(
+            'apps.api.services.vehicle_comparator.get_client'
+        ) as mock_get_client:
+            mock_get_client.return_value.compare.return_value = {
+                'is_same_vehicle': True,
+                'confidence': 0.9,
+                'reason': 'ok',
+                'model': 'm',
+            }
+            compare_vehicles_by_passid('P1')
+
+        kwargs = mock_get_client.return_value.compare.call_args.kwargs
+        # 缺 visual 时只透传车牌/OBU
+        assert kwargs['entry_vehicle_id'] == '京A12345'
+        assert kwargs['entry_obu_id'] == 'OBU-001'
+        assert kwargs.get('entry_color') is None
+        assert kwargs.get('entry_visual_type') is None
+        assert kwargs.get('fingerprint_sim') is None
+
+
+class TestFetchVisualFeatures:
+    def test_returns_empty_dict_when_audit_repo_returns_none(self):
+        """audit_results 无记录时,返回空 dict(走 LLM 回退)。"""
+        with patch('apps.api.services.vehicle_comparator.AuditRepository') as mock_repo:
+            mock_repo.return_value.get_visual_features_by_passid.return_value = None
+            assert _fetch_visual_features('NOPE') == {}
+
+    def test_returns_extracted_fields_when_row_present(self):
+        """有记录时,挑出 5 个视觉信号字段。"""
+        row = {
+            'entry_color': 'blue', 'exit_color': 'red',
+            'entry_visual_type': 'truck', 'exit_visual_type': 'passenger',
+            'fingerprint_sim': 0.77,
+            'other_field': 'ignored',
+        }
+        with patch('apps.api.services.vehicle_comparator.AuditRepository') as mock_repo:
+            mock_repo.return_value.get_visual_features_by_passid.return_value = row
+            result = _fetch_visual_features('P_OK')
+        assert result == {
+            'entry_color': 'blue', 'exit_color': 'red',
+            'entry_visual_type': 'truck', 'exit_visual_type': 'passenger',
+            'fingerprint_sim': 0.77,
+        }
+        assert 'other_field' not in result
+
+    def test_returns_empty_dict_when_audit_repo_raises(self):
+        """AuditRepository 抛异常时,降级为空 dict(不阻断主流程)。"""
+        with patch('apps.api.services.vehicle_comparator.AuditRepository') as mock_repo:
+            mock_repo.return_value.get_visual_features_by_passid.side_effect = RuntimeError('db down')
+            assert _fetch_visual_features('P_ERR') == {}

@@ -114,6 +114,32 @@ CREATE TABLE IF NOT EXISTS migration_log (
     description TEXT,
     applied_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS detection_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    fraud_type TEXT NOT NULL,
+    severity INTEGER DEFAULT 2,
+    description TEXT,
+    rule_expr TEXT NOT NULL,
+    threshold REAL DEFAULT 0.5,
+    enabled INTEGER DEFAULT 1,
+    dry_run INTEGER DEFAULT 0,
+    source TEXT DEFAULT 'manual',
+    created_at TEXT,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS gateway_topology (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_station TEXT NOT NULL,
+    to_station TEXT NOT NULL,
+    distance_km REAL,
+    is_connected INTEGER DEFAULT 1,
+    notes TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
 """
 
 
@@ -128,6 +154,7 @@ class _SQLiteCursorWrapper:
         self._conn = sqlite_conn
         self._cur = None
         self.lastrowid = None
+        self.rowcount = -1
 
     def execute(self, sql: str, params=None):
         sql = sql.replace("%s", "?")
@@ -136,6 +163,7 @@ class _SQLiteCursorWrapper:
         else:
             self._cur = self._conn.execute(sql)
         self.lastrowid = self._cur.lastrowid if self._cur else None
+        self.rowcount = self._cur.rowcount if self._cur else -1
         return self
 
     def fetchone(self):
@@ -203,7 +231,7 @@ def temp_db():
 
     @contextmanager
     def _test_get_connection():
-        """每次调用创建新的 SQLite 连接，保证线程安全（llm_batch 用 ThreadPoolExecutor）。"""
+        """每次调用创建新的 SQLite 连接，保证线程安全（ai_verify_batch 用 ThreadPoolExecutor）。"""
         new_conn = sqlite3.connect(path, check_same_thread=False)
         new_conn.row_factory = sqlite3.Row
         new_conn.create_function("NOW", 0, lambda: __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -220,6 +248,9 @@ def temp_db():
         patch("apps.api.database.repositories.trip_repository.get_connection", _test_get_connection),
         patch("apps.api.database.repositories.audit_repository.get_connection", _test_get_connection),
         patch("apps.api.database.repositories.task_repository.get_connection", _test_get_connection),
+        patch("apps.api.database.repositories.rule_repository.get_connection", _test_get_connection),
+        patch("apps.api.database.repositories.topology_repository.get_connection", _test_get_connection),
+        patch("apps.api.services.rule_loader.get_connection", _test_get_connection),
     ]
     for p in patchers:
         p.start()
@@ -236,39 +267,57 @@ def temp_db():
 
 
 @pytest.fixture
-def mock_ml_models():
-    """Mock ML 模型，避免依赖 GPU 和模型文件"""
-    import numpy as np
+def mock_ai_client():
+    """Mock vehicle-ai-service 公共服务的 HTTP 客户端 — 走公共服务后,所有视觉比对都封到 client 上。
 
-    mock_classifier = MagicMock()
-    mock_classifier.classify.return_value = [{'class': 'truck', 'confidence': 0.95}]
-
-    mock_fp = MagicMock()
-    mock_fp.extract_all_features.return_value = {
-        'global': np.array([0.1] * 512),
-        'parts': {},
-        'color': 'blue'
+    注意:`get_client` 在 truck_obu_detector / entry_exit_matcher / vehicle_comparator / trip_aggregator
+    四个模块里都是 `from apps.api.core.vehicle_ai_client import get_client`,import 时把函数对象
+    拷到模块 namespace。要让 patch 生效,必须 patch 这 4 处的本地绑定,不能只 patch 源模块。
+    """
+    fake = MagicMock()
+    fake.truck_obu.return_value = {
+        'is_suspicious': True,
+        'fraud_type': 'TRUCK_USES_PASSENGER_OBU',
+        'visual_vehicle_type': 'truck',
+        'is_truck': True,
+        'confidence': 0.95,
     }
-
-    with patch(
-        'apps.api.services.entry_exit_matcher.VehicleClassifier',
-        return_value=mock_classifier
-    ), patch(
-        'apps.api.services.truck_obu_detector.VehicleClassifier',
-        return_value=mock_classifier
-    ), patch(
-        'apps.api.services.entry_exit_matcher.MultiPartFingerprint',
-        return_value=mock_fp
-    ), patch(
-        'apps.api.services.truck_obu_detector.TruckOBUDetector._verify_with_llm',
-        return_value=1
-    ):
-        yield
+    fake.entry_exit.return_value = {
+        'is_suspicious': False,
+        'fraud_type': None,
+        'color_match': True,
+        'type_match': True,
+        'fingerprint_sim': 0.92,
+        'entry_color': 'blue',
+        'exit_color': 'blue',
+        'entry_visual_type': 'truck',
+        'exit_visual_type': 'truck',
+        'comparison_success': True,
+    }
+    fake.compare.return_value = {
+        'is_same_vehicle': True,
+        'confidence': 0.92,
+        'reason': '车牌号一致',
+        'model': 'qwen2.5-vl-72b',
+    }
+    patchers = [
+        patch("apps.api.core.vehicle_ai_client.get_client", return_value=fake),
+        patch("apps.api.services.truck_obu_detector.get_client", return_value=fake),
+        patch("apps.api.services.entry_exit_matcher.get_client", return_value=fake),
+        patch("apps.api.services.vehicle_comparator.get_client", return_value=fake),
+    ]
+    for p in patchers:
+        p.start()
+    try:
+        yield fake
+    finally:
+        for p in patchers:
+            p.stop()
 
 
 @pytest.fixture
 def mock_image_download():
-    """Mock 图片下载 — 需 patch 所有已导入该函数的模块"""
+    """Mock 图片下载 — TruckOBUDetector/EntryExitMatcher 走公共服务后不再调用本地下载,但保留为 no-op 以避免依赖业务代码里残留的 import。"""
     fake_bytes = BytesIO(b'fake-image-data')
     with patch(
         'apps.api.services.entry_exit_matcher.download_image',
@@ -280,4 +329,4 @@ def mock_image_download():
         'apps.api.services.image_utils.download_image',
         return_value=fake_bytes
     ):
-        yield
+        yield fake_bytes

@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client(temp_db, mock_ml_models, mock_image_download, monkeypatch):
+def client(temp_db, mock_ai_client, monkeypatch):
     """创建测试客户端（无鉴权）"""
     monkeypatch.setenv('API_KEY', '')
     from apps.api.main import app
@@ -98,7 +98,7 @@ class TestAuth:
         resp = client.get('/api/audit/stats/overview')
         assert resp.status_code == 200
 
-    def test_auth_required(self, temp_db, mock_ml_models, mock_image_download, monkeypatch):
+    def test_auth_required(self, temp_db, mock_ai_client, monkeypatch):
         """测试 API_KEY 设置后需要鉴权"""
         monkeypatch.setattr('apps.api.core.auth.API_KEY', 'secret')
         from apps.api.main import app

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 
 @pytest.fixture
-def client(temp_db, mock_ml_models, mock_image_download, monkeypatch):
+def client(temp_db, mock_ai_client, monkeypatch):
     monkeypatch.setenv('API_KEY', '')
     from apps.api.main import app
     app.state.truck_detector = None

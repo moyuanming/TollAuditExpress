@@ -32,18 +32,26 @@ TollAuditExpress 是面向高速公路收费稽核业务的智能化系统，通
 
 | 稽核模型 | 欺诈类型 | 检测对象 |
 |---|---|---|
-| **模型 A** 货车OBU检测器 | `TRUCK_USES_PASSENGER_OBU`（货车套用客车 OBU） | 入口车型登记 vs 车辆图像识别 |
-| **模型 B** 出入口比对器 | `ENTRY_EXIT_MISMATCH`（出入口车辆不一致） | 入口车牌/车标/颜色 vs 出口 |
+| **货车 OBU 检测** | `TRUCK_USES_PASSENGER_OBU`(货车套用客车 OBU) | 入口车型登记 vs 车辆图像识别 |
+| **出入口比对** | `ENTRY_EXIT_MISMATCH`(出入口车辆不一致) | 入口车牌/车标/颜色 vs 出口 |
+| **门架路径检测** | `GATEWAY_ANOMALY`(门架序列与拓扑不符) | 门架流水 |
+| **车型降档检测** | `VEHICLE_TYPE_DOWNGRADE`(交易记客车,AI 识别为货车) | 交易车型 vs 视觉识别 |
+| **同车牌多 OBU** | `SAME_PLATE_DIFF_VEHICLE`(同一车牌历史多 OBU) | 历史绑定关系 |
+| **OBU 多车绑定** | `OBU_UNBIND`(同一 OBU 短时间绑多车) | 历史绑定关系 |
+| **OBU 屏蔽** | `OBU_SHIELD`(客车记录无 OBU 但有出口图) | 介质类型 vs 出口图片 |
+| **车牌 OBU 历史** | `PLATE_OBU_HISTORY`(车牌-OBU 历史异常) | 历史绑定关系 |
 
 ### 1.2 系统功能
 
-- 📊 **数据聚合**：从源数据库（Doris/StarRocks）拉取门架通行记录，按 PASSID 聚合成完整行程
-- 🔍 **行程查询**：多条件筛选（站点、时间、状态）
-- ⚠️ **可疑识别**：AI 模型自动识别逃费嫌疑，结果入库
-- ✅ **人工稽核**：确认/驳回可疑记录，保留操作审计
-- 📈 **统计分析**：实时统计总览、趋势分析
-- ⏰ **自动化**：定时任务系统，支持自定义筛选规则和调度策略
-- 🚀 **一键部署**：Docker 化，支持本地和远程部署
+- 📊 **数据聚合**:从源数据库(Doris/StarRocks)拉取门架通行记录,按 PASSID 聚合成完整行程
+- 🔍 **行程查询**:多条件筛选(站点、时间、状态)
+- 🚙 **车辆查询**:按车牌/OBU 跨行程反查历史绑定关系
+- ⚠️ **可疑识别**:AI 模型自动识别逃费嫌疑,结果入库(8 类欺诈)
+- ✅ **人工稽核**:确认/驳回可疑记录,保留操作审计
+- 📈 **统计分析**:实时统计总览、趋势分析
+- 🛠 **规则管理**:JSON s-expression 规则 CRUD,支持 `dry_run` 演练
+- ⏰ **自动化**:定时任务系统(5 种 task_type),支持自定义筛选规则和调度策略
+- 🚀 **一键部署**:Docker 化,本地 + 远程三机拓扑
 
 ### 1.3 技术栈
 
@@ -51,10 +59,11 @@ TollAuditExpress 是面向高速公路收费稽核业务的智能化系统，通
 |---|---|
 | 前端 | React 18 + React Router v6 + Vite 5 |
 | 后端 | FastAPI + Uvicorn + Pydantic v2 |
-| 数据库 | Doris（`dwd_tolldata` 只读源库 + `ods_AI_DB` 读写目标库，pymysql 连接池） |
-| 共享契约 | Pydantic（Python） + TypeScript |
-| AI 模型 | PyTorch（YOLOv8 + 自训练分类器） |
-| 部署 | Docker + Docker Compose |
+| 数据库 | Doris(`dwd_tolldata` 只读源库 + `ods_AI_DB` 读写目标库,pymysql 连接池) |
+| 共享契约 | Pydantic(Python)+ TypeScript |
+| AI 模型 | **vehicle-ai-service**(独立公共服务,部署在目标机 `10.11.1.40:8081`,主项目不自部署) |
+| 鉴权 | JWT/OAuth PKCE 双模式(`AUTH_ENABLED` 切换) |
+| 部署 | Docker + 三机拓扑(macOS 调度 / 构建机 / 运行机) |
 
 ---
 
@@ -158,10 +167,12 @@ curl http://localhost:8000/health
 **状态说明：**
 | 状态 | 含义 |
 |---|---|
-| `PENDING` | 待处理（未运行视觉识别） |
-| `VERIFIED` | 已验证（识别完成，未发现异常） |
-| `SUSPECTED` | 可疑（识别发现异常） |
-| `CONFIRMED` | 已确认逃费（人工稽核确认） |
+| `UNPROCESSED` | 未处理(初始态) |
+| `PENDING` | AI 复核中 |
+| `AI_VERIFIED` | AI 复核完成(由公共服务判定) |
+| `VERIFIED` | 已验证(识别完成,未发现异常) |
+| `SUSPECTED` | 可疑(识别发现异常) |
+| `CONFIRMED` | 已确认逃费(人工稽核确认) |
 
 ### 3.3 可疑记录
 
@@ -170,8 +181,15 @@ curl http://localhost:8000/health
 **功能：**
 - **可疑列表**：所有 AI 识别为"可疑"的稽核结果
 - **筛选维度**：
-  - 欺诈类型（`TRUCK_USES_PASSENGER_OBU` / `ENTRY_EXIT_MISMATCH`）
-  - 处理状态（`UNPROCESSED` / `CONFIRMED` / `REJECTED`）
+  - 欺诈类型(支持多选):
+    - `TRUCK_USES_PASSENGER_OBU`(货车套用客车 OBU)
+    - `ENTRY_EXIT_MISMATCH`(出入口车辆不一致)
+    - `GATEWAY_ANOMALY`(门架路径异常)
+    - `VEHICLE_TYPE_DOWNGRADE`(车型降档)
+    - `SAME_PLATE_DIFF_VEHICLE`(同车牌多 OBU)
+    - `OBU_UNBIND`(OBU 多车绑定)
+    - `OBU_SHIELD`(OBU 屏蔽)
+  - 处理状态(`UNPROCESSED` / `AI_VERIFIED` / `CONFIRMED` / `REJECTED`)
 - **详情查看**：点击查看检测详情（识别类型、置信度、风险评分）
 - **稽核操作**：
   - **确认逃费**（CONFIRMED）：标记为真实逃费行为
@@ -200,7 +218,27 @@ curl http://localhost:8000/health
 - **趋势分析**：可疑记录时间分布、欺诈类型分布
 - **稽核员工作量**：按操作员统计确认/驳回数
 
-### 3.5 定时任务
+### 3.5 车辆查询
+
+**路径：** `/vehicles`
+
+**功能：**
+- **按车牌号查询**：输入车牌号,展示该车牌的所有行程历史
+- **按 OBU 编号查询**：输入 OBU 编号,展示该 OBU 绑定的所有车辆
+- **历史绑定关系可视化**：时间轴展示车牌-OBU 绑定关系变更
+- **欺诈关联**：高亮显示该车牌/OBU 涉及的可疑记录
+
+### 3.6 规则管理
+
+**路径：** `/rules`
+
+**功能：**
+- **规则列表**：显示所有检测规则,字段包含名称/欺诈类型/严重度/阈值/`dry_run`/启用
+- **规则创建/编辑**：JSON s-expression DSL(16 个白名单操作符)在线编辑
+- **`dry_run` 演练**：开启后规则匹配只记录不落库,适合新规则灰度
+- **启用/停用**：单条规则可独立启停,不影响其他规则
+
+### 3.7 定时任务
 
 **路径：** `/tasks`
 
@@ -260,32 +298,49 @@ curl http://localhost:8000/health
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                    Frontend (React)                       │
-│  Dashboard │ TripQuery │ Suspects │ Stats │ TaskManager │
+│ Dashboard │ Trip │ Vehicle │ Suspects │ Stats │ Rules │ Tasks│
 │         ↓ fetchJSON + Bearer Token                        │
 └──────────────────────────────────────────────────────────┘
                            │ HTTP REST
 ┌──────────────────────────────────────────────────────────┐
 │                   FastAPI (main.py)                       │
-│  ┌─ API Key Middleware ─┐  ┌─ CORS Middleware ─┐         │
-│  │ /health (公开)        │  │ SPA Fallback (生产)│        │
-│  └───────────────────────┘  └────────────────────┘         │
-│  Routers: health / audit / tasks                          │
+│  ┌─ JWT/OAuth Middleware ─┐  ┌─ CORS Middleware ─┐         │
+│  │ /health (公开)           │  │ SPA Fallback (生产)│        │
+│  └──────────────────────────┘  └────────────────────┘         │
+│  Routers: health / audit / tasks / rules / oauth            │
 │  ┌─────────────────────────────────────────────────────┐ │
 │  │  TripAggregator │ TruckOBUDetector │ EntryExitMatcher│ │
-│  │  TaskScheduler  │ TaskExecutor    │ ImageUtils       │ │
+│  │  TaskScheduler  │ TaskExecutor    │ RuleEngine       │ │
+│  │  VehicleComparator (调公共服务)                      │ │
 │  └─────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────┘
-         │                        │                │
-         ↓                        ↓                ↓
-   ┌──────────┐            ┌──────────┐    ┌──────────────┐
-   │  Doris   │            │ ML Models│    │   抓拍服务器   │
-   │ ods_AI_DB│            │ (PyTorch)│    │ (内网图片)     │
-   └──────────┘            └──────────┘    └──────────────┘
+         │              │              │              │
+         ↓              ↓              ↓              ↓
+   ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────┐
+   │  Doris   │  │ vehicle-ai-  │  │ 抓拍服务器 │  │ OAuth   │
+   │ ods_AI_DB│  │   service    │  │ (内网图片)│  │ 登录平台 │
+   │ (读写)   │  │ (目标机 8081) │  │          │  │          │
+   └──────────┘  └──────────────┘  └──────────┘  └──────────┘
    audit_trips
    audit_results
    scheduled_tasks
    task_executions
+   detection_rules
+   gateway_topology
 ```
+
+### 4.2 公共服务拆分(vehicle-ai-service)
+
+自 Phase 4 起,所有视觉识别(车型、车纹、出入口比对、货车套 OBU)和 LLM 二次判定从主项目拆出,部署在 `vehicle-ai-service`(独立仓库,目标机 `10.11.1.40:8081`)。主项目不再自部署任何 AI 模型。
+
+**调用入口**:`apps/api/core/vehicle_ai_client.py` 暴露 `get_client()` 单例,提供 3 个端点:
+- `compare(entry_url, exit_url, **9 项元数据)` — 出入口双图"同一辆车"判定
+- `entry_exit(entry_url, exit_url)` — 出入口视觉信号(颜色/车型/车纹)
+- `truck_obu(image_url, declared_vehicle_type=1)` — 货车套用客车 OBU 检测
+
+**降级契约**:公共服务不可用时,客户端返回 `{'error': 'service_unavailable', 'detail': '...'}`,业务封装不抛异常,返回安全的默认结果(降级而非崩溃)。
+
+**SSRF 防护**:`image_utils` 强制域名白名单,禁止 `169.254/10.x/192.168/127.x/localhost/metadata.*` 等内网与元数据地址。
 
 ### 4.2 目录结构
 

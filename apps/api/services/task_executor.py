@@ -2,8 +2,50 @@
 
 import json
 import logging
+from threading import local
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
+
+# 当前线程正在执行的 execution_id（由调度器在启动执行线程时设置）
+_ctx = local()
+
+# 各 execution 的日志缓冲 — 必须跨线程共享,否则 flusher 线程读不到执行线程的日志
+_log_buffers: Dict[int, List[str]] = {}
+
+
+def set_log_context(execution_id: int):
+    """在执行线程启动时调用,把当前 execution_id 写入 thread-local,初始化缓冲"""
+    _ctx.execution_id = execution_id
+    _log_buffers[execution_id] = []
+
+
+def clear_log_context(execution_id: int):
+    """在执行线程退出时调用,清掉 thread-local 标记和缓冲"""
+    if getattr(_ctx, 'execution_id', None) == execution_id:
+        _ctx.execution_id = None
+    _log_buffers.pop(execution_id, None)
+
+
+def get_log_lines(execution_id: int) -> list[str]:
+    """返回指定 execution 的缓冲(供调度器 flush 到 DB)"""
+    return _log_buffers.get(execution_id, [])
+
+
+class _CaptureHandler(logging.Handler):
+    """把日志记录追加到当前线程对应 execution 的缓冲里"""
+
+    def emit(self, record: logging.LogRecord):
+        eid = getattr(_ctx, 'execution_id', None)
+        if eid is None:
+            return
+        lines = _log_buffers.get(eid)
+        if lines is None:
+            return
+        try:
+            lines.append(self.format(record))
+        except Exception:
+            pass
 
 
 def execute_task(task: dict) -> dict:
@@ -23,6 +65,8 @@ def execute_task(task: dict) -> dict:
         return _execute_aggregate_detect(filter_rules, trip_repo)
     elif task_type == 'detect_only':
         return _execute_detect_only(filter_rules, trip_repo)
+    elif task_type == 'multi_detect':
+        return _execute_multi_detect(filter_rules, trip_repo)
     elif task_type == 're_detect':
         return _execute_re_detect(trip_repo)
     elif task_type == 'llm_verify':
@@ -32,11 +76,11 @@ def execute_task(task: dict) -> dict:
 
 
 def _execute_llm_verify(filter_rules: dict) -> dict:
-    """LLM 二次判定：批跑所有 llm_checked_at IS NULL 的可疑记录。"""
-    from apps.api.services.llm_batch import run_llm_batch_for_suspects
+    """AI 二次复核：批跑所有 llm_checked_at IS NULL 的可疑记录（走 vehicle-ai-service）。"""
+    from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
     limit = int(filter_rules.get('limit', 50))
     max_workers = int(filter_rules.get('max_workers', 4))
-    return run_llm_batch_for_suspects(limit=limit, max_workers=max_workers)
+    return run_ai_verify_batch_for_suspects(limit=limit, max_workers=max_workers)
 
 
 def _execute_aggregate_detect(filter_rules: dict, trip_repo) -> dict:
@@ -250,3 +294,77 @@ def _execute_re_detect(trip_repo) -> dict:
                 pass
 
     return {"aggregated": 0, "detected": detected, "suspected": suspected}
+
+
+def _execute_multi_detect(filter_rules: dict, trip_repo) -> dict:
+    """多维度检测：RuleEngine + 内置 Detector 联合执行"""
+    from apps.api.services.rule_engine import RuleEngine
+    from apps.api.services.rule_loader import load_rules
+    from apps.api.services.detectors import all_detectors
+
+    # filter_rules 可能被双层 JSON 编码，确保是 dict
+    if isinstance(filter_rules, str):
+        try:
+            filter_rules = json.loads(filter_rules)
+        except (json.JSONDecodeError, TypeError):
+            filter_rules = {}
+    if not isinstance(filter_rules, dict):
+        filter_rules = {}
+
+    limit = int(filter_rules.get('limit', 200))
+    fraud_types = filter_rules.get('fraud_types')
+
+    engine = RuleEngine()
+    try:
+        rules = load_rules()
+        engine.load_from_dicts(rules)
+    except Exception as e:
+        logger.warning("Failed to load rules, running detectors only: %s", e)
+
+    trips = trip_repo.get_trips(limit=limit)
+    detected = 0
+    suspected = 0
+
+    for trip in trips:
+        trip_id = trip['id']
+        passid = trip['passid']
+        trip_results = []
+
+        rule_results = engine.run(trip, fraud_types=fraud_types)
+        for rr in rule_results:
+            trip_results.append({
+                'audit_trip_id': trip_id,
+                'fraud_type': rr['fraud_type'],
+                'is_suspicious': rr['is_suspicious'],
+                'risk_score': rr['risk_score'],
+                'rule_id': rr.get('rule_id'),
+                'dry_run': rr.get('dry_run', 0),
+                'details': json.dumps(rr.get('details', {}), ensure_ascii=False),
+            })
+
+        for det in all_detectors():
+            if fraud_types and det.fraud_type not in fraud_types:
+                continue
+            try:
+                r = det.detect(trip)
+                if r:
+                    trip_results.append({
+                        'audit_trip_id': trip_id,
+                        'fraud_type': r['fraud_type'],
+                        'is_suspicious': 1 if r.get('risk_hint', 0) >= 0.6 else 0,
+                        'risk_score': r.get('risk_hint', 0),
+                        'details': json.dumps(r, ensure_ascii=False),
+                    })
+            except Exception as e:
+                logger.debug("Detector %s error: %s", det.fraud_type, e)
+
+        if trip_results:
+            try:
+                trip_repo.save_trip_with_detection_results(trip_id, passid, trip_results)
+                detected += 1
+                if any(r['is_suspicious'] for r in trip_results):
+                    suspected += 1
+            except Exception as e:
+                logger.error("Save error for %s: %s", passid, e)
+
+    return {"multi_detect": True, "detected": detected, "suspected": suspected}

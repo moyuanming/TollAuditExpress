@@ -119,8 +119,8 @@ class TestSerializeGantryRecords:
 
 
 class TestTripAggregator:
-    def test_run_detection_with_mocks(self, temp_db, mock_ml_models, mock_image_download, monkeypatch):
-        """测试 _run_detection 在 mock 模型和数据库下的完整流程"""
+    def test_run_detection_with_mocks(self, temp_db, mock_ai_client):
+        """测试 _run_detection 在 mock 公共服务和数据库下的完整流程"""
         from apps.api.database.repositories.trip_repository import TripRepository
 
         repo = TripRepository()

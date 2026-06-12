@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
 
+# 单次任务最长执行时长（分钟）。超过则标记为失败，避免僵尸线程/记录堆积。
+MAX_EXECUTION_MINUTES = 60
+
 
 def start_scheduler():
     """启动调度器 daemon 线程（仅启动一次）"""
@@ -40,6 +43,7 @@ def _check_and_execute_due_tasks():
     from apps.api.database.repositories.task_repository import TaskRepository
 
     task_repo = TaskRepository()
+    _cleanup_stuck_executions(task_repo)
     due_tasks = task_repo.get_due_tasks()
 
     for task in due_tasks:
@@ -77,15 +81,71 @@ def _has_running_execution(task_repo, task_id: int) -> bool:
     return False
 
 
+def _cleanup_stuck_executions(task_repo):
+    """将超时未结束的 running 记录标记为 failed，限制线程/记录堆积"""
+    try:
+        cleaned = task_repo.cleanup_stuck_executions(MAX_EXECUTION_MINUTES)
+        if cleaned:
+            logger.warning("清理 %d 条超时未结束的任务执行记录（> %d 分钟）",
+                           cleaned, MAX_EXECUTION_MINUTES)
+    except Exception as e:
+        logger.error("清理超时任务失败: %s", e, exc_info=True)
+
+
 def _execute_and_record(task: dict, execution_id: int):
-    """执行任务并记录结果"""
+    """执行任务并记录结果（带实时日志落库）"""
+    from apps.api.services.task_executor import (
+        execute_task, set_log_context, clear_log_context, get_log_lines,
+    )
+    import logging
+    import threading
+
+    # 安装日志捕获 handler(仅本线程执行期间有效)
+    capture = __import__(
+        'apps.api.services.task_executor', fromlist=['_CaptureHandler']
+    )._CaptureHandler(level=logging.INFO)
+    capture.setFormatter(logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    ))
+    root = logging.getLogger()
+    root.addHandler(capture)
+    # uvicorn 把 root level 设为 WARNING,会把 INFO 过滤掉导致 capture handler 收不到
+    # 子 logger 的 INFO 记录。临时降到 INFO 即可。
+    _original_root_level = root.level
+    if root.level > logging.INFO:
+        root.setLevel(logging.INFO)
+    set_log_context(execution_id)
+
+    # 周期落库线程：每 5 秒把当前缓冲刷一次到 DB，让前端能实时看到进度
+    stop_event = threading.Event()
+
+    def _log_flusher():
+        from apps.api.database.repositories.task_repository import TaskRepository
+        repo = TaskRepository()
+        while not stop_event.wait(5):
+            try:
+                lines = get_log_lines(execution_id)
+                if lines:
+                    repo.update_execution_logs(execution_id, "\n".join(lines[-2000:]))
+            except Exception as e:
+                logger.warning("周期落库日志失败: %s", e)
+
+    flusher = threading.Thread(target=_log_flusher, daemon=True,
+                               name=f"task-log-flusher-{execution_id}")
+    flusher.start()
+
+    task_type = task.get('task_type', 'aggregate_detect')
+    task_name = task.get('name', f'task#{task.get("id")}')
+    logger.info("Task [%d] %s started (type=%s)", task['id'], task_name, task_type)
+
     try:
         from apps.api.database.repositories.task_repository import TaskRepository
-        from apps.api.services.task_executor import execute_task
-
         task_repo = TaskRepository()
         result = execute_task(task)
-        task_repo.complete_execution(execution_id, result_summary=result)
+        task_repo.complete_execution(
+            execution_id, result_summary=result, error_message=None,
+        )
         logger.info("Task [%d] completed: %s", task['id'], result)
     except Exception as e:
         logger.error("Task [%d] failed: %s", task['id'], e)
@@ -94,6 +154,18 @@ def _execute_and_record(task: dict, execution_id: int):
             TaskRepository().complete_execution(execution_id, error_message=str(e))
         except Exception:
             pass
+    finally:
+        stop_event.set()
+        try:
+            lines = get_log_lines(execution_id)
+            if lines:
+                tail = "\n".join(lines[-2000:])
+                TaskRepository().update_execution_logs(execution_id, tail)
+        except Exception as e:
+            logger.warning("保存执行日志失败: %s", e)
+        root.removeHandler(capture)
+        root.setLevel(_original_root_level)
+        clear_log_context(execution_id)
 
 
 def _schedule_next_run(task_repo, task: dict):

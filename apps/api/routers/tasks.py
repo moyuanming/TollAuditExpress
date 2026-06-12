@@ -86,3 +86,13 @@ async def get_task_executions(task_id: int, limit: int = 50):
     executions = repo.get_executions(task_id, limit=limit)
     total = repo.get_executions_count(task_id)
     return TaskExecutionListResponse(executions=executions, total=total)
+
+
+@router.get("/tasks/{task_id}/executions/{execution_id}", response_model=TaskExecutionResponse)
+async def get_task_execution_detail(task_id: int, execution_id: int):
+    """获取单条执行详情（含完整日志）"""
+    repo = TaskRepository()
+    execution = repo.get_execution(execution_id)
+    if not execution or execution.get('task_id') != task_id:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    return TaskExecutionResponse(**execution)

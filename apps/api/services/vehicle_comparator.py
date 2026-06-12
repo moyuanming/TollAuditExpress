@@ -1,21 +1,22 @@
 """
-车辆双图比对业务封装：手动触发 MaaS 对出入口车牌特写做"同一辆车"判定。
+车辆双图比对业务封装：手动触发 vehicle-ai-service 对出入口车牌特写做"同一辆车"判定。
 
-设计原则：
-- 入口/出口图片 URL 取自 trip_aggregator.aggregate_trip(passid) 的
-  entry_image_license / exit_image_license（Doris 已 join 出的完整 URL）。
-- 缺任一图片 URL → 400（image_url_missing）。
-- 调 MaaS 前先把图片下载到本地临时 jpg，函数返回前清理。
-- 任何 MaaS 异常 / 解析失败都翻译为 error dict，路由层映射到 502。
+调用方不变：
+    compare_vehicles_by_passid(passid) -> Dict
+业务编排：
+    - 入/出口图片 URL 取自 trip_aggregator.aggregate_trip(passid)
+    - 入/出口车牌/OBU 取自同一个 trip dict
+    - 视觉信号（颜色/车型/fingerprint_sim）取自 audit_results 表
+    - 缺任一图片 URL → 400（image_url_missing）
+    - 调公共服务失败 → service_unavailable，不抛异常
+    - 元数据完整时优先走侧车的分档裁决，完全省去 LLM
 """
 
-import os
-import time
-import tempfile
 from typing import Any, Dict
 
 from apps.api.core.logging_config import get_logger
-from apps.api.services.image_utils import download_images_parallel
+from apps.api.core.vehicle_ai_client import get_client
+from apps.api.database.repositories.audit_repository import AuditRepository
 from apps.api.services.trip_aggregator import aggregate_trip
 
 logger = get_logger(__name__)
@@ -30,41 +31,37 @@ def _missing_image_error(missing_field: str) -> Dict[str, Any]:
 
 def _unavailable_error(detail: str) -> Dict[str, Any]:
     return {
-        'error': 'maas_unavailable',
+        'error': 'service_unavailable',
         'detail': detail,
     }
 
 
-def _parse_error(detail: str) -> Dict[str, Any]:
-    return {
-        'error': 'parse_error',
-        'detail': detail,
-    }
-
-
-def _write_temp_image(url: str, url_to_bytes: Dict[str, Any]) -> str:
-    """从 url_to_bytes 取出 url 对应 BytesIO，写到 NamedTemporaryFile(jpg)，返回路径。"""
-    image_io = url_to_bytes.get(url)
-    if image_io is None:
-        raise ValueError(f"image not downloaded: {url}")
-    image_io.seek(0)
-    tmp = tempfile.NamedTemporaryFile(prefix='maas-', suffix='.jpg', delete=False)
+def _fetch_visual_features(passid: str) -> Dict[str, Any]:
+    """从 audit_results 拉视觉信号，失败/缺失时返回空 dict（走 LLM 回退）。"""
     try:
-        tmp.write(image_io.getvalue())
-        tmp.flush()
-    finally:
-        tmp.close()
-    return tmp.name
+        row = AuditRepository().get_visual_features_by_passid(passid)
+    except Exception as e:
+        logger.warning('visual_features lookup failed for %s: %s', passid, e)
+        return {}
+    if not row:
+        return {}
+    return {
+        'entry_color': row.get('entry_color'),
+        'exit_color': row.get('exit_color'),
+        'entry_visual_type': row.get('entry_visual_type'),
+        'exit_visual_type': row.get('exit_visual_type'),
+        'fingerprint_sim': row.get('fingerprint_sim'),
+    }
 
 
 def compare_vehicles_by_passid(passid: str) -> Dict[str, Any]:
-    """按 passid 取行程后，并行下载出入口车牌图，调 MaaS 双图比对。
+    """按 passid 取行程后，把图片 URL + 9 项元数据透传给 vehicle-ai-service。
 
     Returns:
         成功：{'passid', 'is_same_vehicle', 'confidence', 'reason',
               'entry_image_url', 'exit_image_url', 'model', 'elapsed_ms'}
-        失败：{'error': 'trip_not_found'|'image_url_missing'|'image_download_failed'|
-                       'maas_unavailable'|'parse_error', ...}
+        失败：{'error': 'trip_not_found'|'image_url_missing'|'service_unavailable'|
+                       'parse_error', ...}
     """
     if not passid:
         return _missing_image_error('passid')
@@ -81,50 +78,38 @@ def compare_vehicles_by_passid(passid: str) -> Dict[str, Any]:
     if not exit_url:
         return _missing_image_error('exit_image_license')
 
-    started = time.monotonic()
-    url_to_bytes = download_images_parallel([entry_url, exit_url])
-    if url_to_bytes.get(entry_url) is None or url_to_bytes.get(exit_url) is None:
+    visual = _fetch_visual_features(passid)
+
+    try:
+        result = get_client().compare(
+            entry_url,
+            exit_url,
+            entry_vehicle_id=trip.get('entry_vehicle_id'),
+            exit_vehicle_id=trip.get('exit_vehicle_id'),
+            entry_obu_id=trip.get('entry_obu_id'),
+            exit_obu_id=trip.get('exit_obu_id'),
+            entry_color=visual.get('entry_color'),
+            exit_color=visual.get('exit_color'),
+            entry_visual_type=visual.get('entry_visual_type'),
+            exit_visual_type=visual.get('exit_visual_type'),
+            fingerprint_sim=visual.get('fingerprint_sim'),
+        )
+    except Exception as e:
+        logger.warning('compare service raised for %s: %s', passid, e)
+        return _unavailable_error(str(e))
+
+    if 'error' in result:
+        if result['error'] in ('image_url_missing',):
+            return result
+        return _unavailable_error(result.get('detail', result['error']))
+
+    missing = [k for k in ('is_same_vehicle', 'confidence', 'reason', 'model') if k not in result]
+    if missing:
         return {
-            'error': 'image_download_failed',
-            'entry_ok': url_to_bytes.get(entry_url) is not None,
-            'exit_ok': url_to_bytes.get(exit_url) is not None,
+            'error': 'parse_error',
+            'detail': f'missing fields: {missing}',
         }
 
-    tmp_paths = []
-    try:
-        tmp_a = _write_temp_image(entry_url, url_to_bytes)
-        tmp_b = _write_temp_image(exit_url, url_to_bytes)
-        tmp_paths = [tmp_a, tmp_b]
-    except Exception as e:
-        for p in tmp_paths:
-            try:
-                os.unlink(p)
-            except OSError:
-                pass
-        logger.error("vehicle_comparator: write temp file failed for %s: %s", passid, e)
-        return _unavailable_error(f"temp file write failed: {e}")
-
-    try:
-        from apps.api.LLM.Maas import compare_vehicles
-        result = compare_vehicles(tmp_paths[0], tmp_paths[1])
-    except Exception as e:
-        logger.error("vehicle_comparator: MaaS call failed for %s: %s", passid, e)
-        return _unavailable_error(str(e))
-    finally:
-        for p in tmp_paths:
-            try:
-                os.unlink(p)
-            except OSError:
-                pass
-
-    if not result:
-        return _unavailable_error("empty result from MaaS")
-
-    missing = [k for k in ('is_same_vehicle', 'confidence', 'reason') if k not in result]
-    if missing:
-        return _parse_error(f"missing fields: {missing}")
-
-    elapsed_ms = int((time.monotonic() - started) * 1000)
     return {
         'passid': passid,
         'is_same_vehicle': bool(result['is_same_vehicle']),
@@ -133,5 +118,5 @@ def compare_vehicles_by_passid(passid: str) -> Dict[str, Any]:
         'entry_image_url': entry_url,
         'exit_image_url': exit_url,
         'model': str(result.get('model', '')),
-        'elapsed_ms': elapsed_ms,
+        'elapsed_ms': int(result.get('elapsed_ms', 0)),
     }

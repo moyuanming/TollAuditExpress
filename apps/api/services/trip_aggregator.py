@@ -398,27 +398,27 @@ class TripAggregator:
                 logger.error("Saving results error: %s", e)
                 return
 
-            # 后台异步跑 LLM 二次判定（不阻塞检测主路径）
+            # 后台异步跑 AI 二次判定（不阻塞检测主路径）
             self._schedule_llm_verification_async(trip_data.get('passid'))
 
     def _schedule_llm_verification_async(self, passid: Optional[str]) -> None:
-        """起一个 daemon 线程跑 LLM 批量判定，fire-and-forget。"""
+        """起一个 daemon 线程跑 AI 公共服务批量复核，fire-and-forget。"""
         if not passid:
             return
         try:
-            from apps.api.services.llm_batch import run_llm_batch_for_suspects
+            from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
         except ImportError as e:
-            logger.warning("llm_batch not available, skip async LLM: %s", e)
+            logger.warning("ai_verify_batch not available, skip async verify: %s", e)
             return
 
         def _runner():
             try:
-                result = run_llm_batch_for_suspects(limit=50, max_workers=4)
-                logger.info("async LLM batch for passid=%s done: %s", passid, result)
+                result = run_ai_verify_batch_for_suspects(limit=50, max_workers=4)
+                logger.info("async ai-verify batch for passid=%s done: %s", passid, result)
             except Exception as e:
-                logger.error("async LLM batch for passid=%s crashed: %s", passid, e)
+                logger.error("async ai-verify batch for passid=%s crashed: %s", passid, e)
 
-        t = threading.Thread(target=_runner, name=f"llm-batch-{passid}", daemon=True)
+        t = threading.Thread(target=_runner, name=f"ai-verify-batch-{passid}", daemon=True)
         t.start()
 
     def aggregate_recent_trips(self, days: int = 7, limit: int = 100, on_progress: Optional[Callable] = None, run_detection: bool = True) -> int:

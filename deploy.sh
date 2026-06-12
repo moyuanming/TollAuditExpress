@@ -80,39 +80,13 @@ push_env_to_target() {
     # scp 到临时文件，sed 把本地 macOS 路径替换为容器内路径，再移到正式位置
     scp $SSH_OPTS "$LOCAL_DIR/.env" "$TARGET_SERVER:$TARGET_DIR/.env.tmp"
     ssh $SSH_OPTS "$TARGET_SERVER" "
-        sed -i 's|^GETMOVEOBU_PATH=.*|GETMOVEOBU_PATH=/app/models|' '$TARGET_DIR/.env.tmp' && \
-        sed -i 's|^MODEL_PATH=.*|MODEL_PATH=/app/models/best_model.pth|' '$TARGET_DIR/.env.tmp' && \
-        sed -i 's|^MAAS_API_URL=.*|MAAS_API_URL=http://10.11.110.26:9910/hwmaas/v1|' '$TARGET_DIR/.env.tmp' && \
         sed -i 's|^CORS_ORIGINS=.*|CORS_ORIGINS=http://10.11.1.40:8080,http://localhost:3000|' '$TARGET_DIR/.env.tmp' && \
         sed -i 's|^AUTH_ENABLED=.*|AUTH_ENABLED=false|' '$TARGET_DIR/.env.tmp' && \
+        sed -i 's|^VEHICLE_AI_SERVICE_URL=.*|VEHICLE_AI_SERVICE_URL=http://10.11.1.40:8081|' '$TARGET_DIR/.env.tmp' && \
         mv '$TARGET_DIR/.env.tmp' '$TARGET_DIR/.env' && \
         chmod 600 '$TARGET_DIR/.env' && \
         chown 1000:1000 '$TARGET_DIR/.env'
     "
-}
-
-# 推送 ML 模型文件到目标服务器
-LOCAL_MODEL_PATH="${LOCAL_MODEL_PATH:-/Users/moyuanming/getmoveobu/best_model.pth}"
-LOCAL_RESNET50_PATH="${LOCAL_RESNET50_PATH:-$HOME/.cache/torch/hub/checkpoints/resnet50-0676ba61.pth}"
-push_models_to_target() {
-    local pushed=0
-    if [ -f "$LOCAL_MODEL_PATH" ]; then
-        echo -e "${GREEN}  推送 best_model.pth 到 $TARGET_SERVER:$TARGET_DIR/models/ ${NC}"
-        ssh $SSH_OPTS "$TARGET_SERVER" "install -d -m 755 '$TARGET_DIR/models'"
-        scp $SSH_OPTS "$LOCAL_MODEL_PATH" "$TARGET_SERVER:$TARGET_DIR/models/"
-        pushed=1
-    else
-        echo -e "${YELLOW}  本地模型 $LOCAL_MODEL_PATH 不存在，跳过${NC}"
-    fi
-    if [ -f "$LOCAL_RESNET50_PATH" ]; then
-        echo -e "${GREEN}  推送 resnet50 到 $TARGET_SERVER:$TARGET_DIR/models/torch_cache/hub/checkpoints/ ${NC}"
-        ssh $SSH_OPTS "$TARGET_SERVER" "install -d -m 755 '$TARGET_DIR/models/torch_cache/hub/checkpoints'"
-        scp $SSH_OPTS "$LOCAL_RESNET50_PATH" "$TARGET_SERVER:$TARGET_DIR/models/torch_cache/hub/checkpoints/"
-        pushed=1
-    fi
-    if [ "$pushed" = "1" ]; then
-        ssh $SSH_OPTS "$TARGET_SERVER" "chown -R 1000:1000 '$TARGET_DIR/models'"
-    fi
 }
 
 # 清理目标机上 image 名含 toll-audit、但容器名不是 $CONTAINER_NAME 的孤儿容器
@@ -147,9 +121,6 @@ if [ "$UPDATE_TYPE" = "code" ]; then
 
     echo -e "${GREEN}[2/5] 推送 .env（chmod 600）...${NC}"
     push_env_to_target
-
-    echo -e "${GREEN}[2.5/5] 推送 ML 模型文件...${NC}"
-    push_models_to_target
 
     echo -e "${GREEN}[3/5] 同步代码到目标服务器（tar+scp，排除 .env）...${NC}"
     tar czf /tmp/toll-audit-code.tar.gz \
@@ -206,19 +177,26 @@ elif [ "$UPDATE_TYPE" = "full" ]; then
         --exclude='deploy.config.env' \
         "$LOCAL_DIR/" "$BUILD_SERVER:$BUILD_DIR/"
 
+    echo -e "${GREEN}[3.5/7] 跑全量测试(失败则中止,不进入 docker build)...${NC}"
+    if ! python3 -m pytest tests/ -m "not slow"; then
+        echo -e "${RED}错误: pytest 失败,中止 docker build${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}  测试通过${NC}"
+
     echo -e "${GREEN}[4/7] 在构建服务器上 docker build...${NC}"
     ssh $SSH_OPTS "$BUILD_SERVER" "cd $BUILD_DIR && docker build -t $IMAGE_NAME . 2>&1 | tail -15"
 
     echo -e "${GREEN}[5/7] 导出镜像 → 拉回本地 → 推到目标机（构建机↔目标机不通，本地中转）...${NC}"
     ssh $SSH_OPTS "$BUILD_SERVER" "docker save $IMAGE_NAME -o $BUILD_DIR/toll-audit-express.tar"
-    rsync -avz -e "ssh $SSH_OPTS" "$BUILD_SERVER:$BUILD_DIR/toll-audit-express.tar" /tmp/
+    # 用 scp 拉回本地（macOS 自带 rsync 2.6.9 与构建机 3.2.7 大文件 deflate 不兼容）
+    scp $SSH_OPTS "$BUILD_SERVER:$BUILD_DIR/toll-audit-express.tar" /tmp/
     # 用 scp 推到目标机（CentOS 7 默认没 rsync，scp 更可靠）
     ssh $SSH_OPTS "$TARGET_SERVER" "rm -f /tmp/toll-audit-express.tar" 2>/dev/null || true
     scp $SSH_OPTS /tmp/toll-audit-express.tar "$TARGET_SERVER:/tmp/"
 
-    echo -e "${GREEN}[6/7] 在目标服务器上加载并启动新容器 + 推 .env + 推模型 + 清孤儿容器...${NC}"
+    echo -e "${GREEN}[6/7] 在目标服务器上加载并启动新容器 + 推 .env + 清孤儿容器...${NC}"
     push_env_to_target
-    push_models_to_target
     ssh $SSH_OPTS "$TARGET_SERVER" "
         set -e
         docker stop $CONTAINER_NAME 2>/dev/null || true
@@ -233,8 +211,6 @@ elif [ "$UPDATE_TYPE" = "full" ]; then
             -p $SERVICE_PORT:8000 \
             -v $TARGET_DIR/apps/api/data:/app/apps/api/data \
             -v $TARGET_DIR/.env:/app/.env:ro \
-            -v $TARGET_DIR/models:/app/models:ro \
-            -v $TARGET_DIR/models/torch_cache:/home/appuser/.cache/torch \
             -v $TARGET_DIR/logs:/app/logs \
             --restart unless-stopped \
             $IMAGE_NAME

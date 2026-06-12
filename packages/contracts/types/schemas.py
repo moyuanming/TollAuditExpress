@@ -190,6 +190,7 @@ class TaskExecutionResponse(BaseModel):
     completed_at: Optional[str] = None
     result_summary: Optional[str] = None
     error_message: Optional[str] = None
+    logs: Optional[str] = None
     created_at: Optional[str] = None
 
     class Config:
@@ -259,6 +260,48 @@ class LlmVehicleCompareResponse(BaseModel):
     exit_image_url: Optional[str] = None
     model: str
     elapsed_ms: int
+
+
+class DetectionRuleCreate(BaseModel):
+    name: str
+    fraud_type: str
+    severity: int = 2
+    description: Optional[str] = None
+    rule_expr: dict
+    threshold: float = 0.5
+    dry_run: int = 0
+    source: str = "manual"
+
+
+class DetectionRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    fraud_type: Optional[str] = None
+    severity: Optional[int] = None
+    description: Optional[str] = None
+    rule_expr: Optional[dict] = None
+    threshold: Optional[float] = None
+    dry_run: Optional[int] = None
+    enabled: Optional[int] = None
+
+
+class DetectionRuleResponse(BaseModel):
+    id: int
+    name: str
+    fraud_type: str
+    severity: int = 2
+    description: Optional[str] = None
+    rule_expr: str
+    threshold: float = 0.5
+    dry_run: int = 0
+    enabled: int = 1
+    source: str = "manual"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class DetectionRuleListResponse(BaseModel):
+    rules: list
+    total: int
 
 
 TripDetailResponse.model_rebuild()

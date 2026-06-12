@@ -44,7 +44,7 @@ def _new_connection() -> pymysql.connections.Connection:
         charset="utf8mb4",
         cursorclass=DictCursor,
         conv=_conv,
-        autocommit=False,
+        autocommit=True,
         connect_timeout=10,
         read_timeout=30,
         write_timeout=30,
@@ -79,8 +79,18 @@ def get_connection():
             except Exception:
                 pass
             conn = _new_connection()
+        # 取出时 rollback，确保不在残留事务快照中
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         yield conn
     finally:
+        # 归还前 rollback，清除残留事务避免后续读到旧快照
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         pool.put(conn)
 
 
@@ -100,6 +110,7 @@ def init_doris() -> None:
     statements = [s for s in statements if s]
     with get_connection() as conn:
         cur = conn.cursor()
+        failed = 0
         for stmt in statements:
             try:
                 cur.execute(stmt)
@@ -107,10 +118,18 @@ def init_doris() -> None:
                 msg = str(e).lower()
                 if "already exist" in msg or "duplicate" in msg:
                     continue
-                logger.exception("DDL statement failed: %s", stmt[:120])
-                raise
-        conn.commit()
-        cur.execute("INSERT INTO migration_log (version, description) VALUES (%s, %s)",
-                    (_SCHEMA_VERSION, "init_doris() on startup"))
-        conn.commit()
-    logger.info("Doris schema initialized (version=%d)", _SCHEMA_VERSION)
+                failed += 1
+                logger.warning("DDL statement failed (continuing): %s | err=%s",
+                               stmt[:80], str(e)[:200])
+        try:
+            conn.commit()
+            cur.execute("INSERT INTO migration_log (version, description) VALUES (%s, %s)",
+                        (_SCHEMA_VERSION, "init_doris() on startup"))
+            conn.commit()
+        except Exception as e:
+            logger.warning("migration_log insert failed (continuing): %s", str(e)[:200])
+    if failed:
+        logger.warning("Doris schema init completed with %d DDL failures "
+                       "(详见 doris_ddl.sql 兼容性,跟踪迁移计划)", failed)
+    else:
+        logger.info("Doris schema initialized (version=%d)", _SCHEMA_VERSION)

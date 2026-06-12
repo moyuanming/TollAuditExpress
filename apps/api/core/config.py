@@ -33,10 +33,6 @@ DB_AUDIT_USER = os.getenv('DB_AUDIT_USER', DB_USER)
 DB_AUDIT_PASSWORD = os.getenv('DB_AUDIT_PASSWORD', DB_PASSWORD)
 DB_AUDIT_NAME = os.getenv('DB_AUDIT_NAME', 'ods_AI_DB')
 
-# 外部工具路径
-GETMOVEOBU_PATH = os.getenv('GETMOVEOBU_PATH', '')
-MODEL_PATH = os.getenv('MODEL_PATH', os.path.join(GETMOVEOBU_PATH, 'best_model.pth') if GETMOVEOBU_PATH else '')
-
 # 图片下载配置
 IMAGE_DOWNLOAD_TIMEOUT = int(os.getenv('IMAGE_DOWNLOAD_TIMEOUT', '15'))
 IMAGE_DOWNLOAD_RETRIES = int(os.getenv('IMAGE_DOWNLOAD_RETRIES', '3'))
@@ -45,17 +41,10 @@ IMAGE_DOWNLOAD_RETRIES = int(os.getenv('IMAGE_DOWNLOAD_RETRIES', '3'))
 TRUCK_OBU_CONFIDENCE_THRESHOLD = float(os.getenv('TRUCK_OBU_CONFIDENCE_THRESHOLD', '0.8'))
 FINGERPRINT_SIM_THRESHOLD = float(os.getenv('FINGERPRINT_SIM_THRESHOLD', '0.6'))
 
-# LLM API Keys
-ZHIPU_API_KEY = os.getenv('ZHIPU_API_KEY', '')
-DOUBAO_API_KEY = os.getenv('DOUBAO_API_KEY', '')
-QWEN_API_KEY = os.getenv('QWEN_API_KEY', '')
-MAAS_API_KEY = os.getenv('MAAS_API_KEY', '')
-MAAS_MODEL = os.getenv('MAAS_MODEL', 'qwen2.5-vl-72b')
-MAAS_API_URL = os.getenv('MAAS_API_URL', 'https://api.modelarts-maas.com/v1/chat/completions')
-LLM_TIMEOUT = int(os.getenv('LLM_TIMEOUT', '60'))
-
-# 车辆部件检测模型（需自定义训练模型，COCO预训练模型无法检测车辆部件）
-VEHICLE_PART_MODEL_PATH = os.getenv('VEHICLE_PART_MODEL_PATH', '')
+# 车辆 AI 公共服务（独立部署在目标机同台 8081 端口）
+# 主项目不再自部署视觉/LLM 模型，所有比对统一走该服务
+VEHICLE_AI_SERVICE_URL = os.getenv('VEHICLE_AI_SERVICE_URL', 'http://10.11.1.40:8081')
+VEHICLE_AI_SERVICE_TIMEOUT = int(os.getenv('VEHICLE_AI_SERVICE_TIMEOUT', '65'))
 
 # CORS
 CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')

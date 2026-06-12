@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 
 @pytest.fixture
-def client(temp_db, mock_ml_models, mock_image_download, monkeypatch):
+def client(temp_db, mock_ai_client, monkeypatch):
     monkeypatch.setenv('API_KEY', '')
     from apps.api.main import app
     app.state.truck_detector = None
@@ -81,7 +81,7 @@ class TestSuspectsList:
         _insert_suspect_trip('FT1', 'TRUCK_USES_PASSENGER_OBU')
         _insert_suspect_trip('FT2', 'ENTRY_EXIT_MISMATCH')
 
-        resp = client.get('/api/audit/suspects', params={'fraud_type': 'TRUCK_USES_PASSENGER_OBU'})
+        resp = client.get('/api/audit/suspects', params={'fraud_types': ['TRUCK_USES_PASSENGER_OBU']})
         assert resp.status_code == 200
         data = resp.json()
         assert data['total'] == 1
