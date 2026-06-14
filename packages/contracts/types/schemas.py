@@ -412,7 +412,7 @@ class LandingLeadResponse(BaseModel):
 
 
 class LandingLeadListResponse(BaseModel):
-    leads: list
+    leads: List["LandingLeadResponse"]
     total: int
     limit: int
     offset: int
