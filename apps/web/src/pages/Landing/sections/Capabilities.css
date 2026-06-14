@@ -1,0 +1,59 @@
+.cap { background: #fafbff; padding: 72px 0; }
+.cap-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.cap-title {
+  text-align: center;
+  font-size: 30px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 8px;
+}
+.cap-sub {
+  text-align: center;
+  color: #64748b;
+  font-size: 14px;
+  margin: 0 0 36px;
+}
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.cap-card {
+  background: #fff;
+  border: 1px solid #eef2f7;
+  border-radius: 12px;
+  padding: 20px;
+  transition: transform .15s, box-shadow .15s;
+}
+.cap-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+.cap-badge {
+  display: inline-block;
+  font-size: 11px;
+  background: #eef2ff;
+  color: #4f46e5;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.cap-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+.cap-desc {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+@media (max-width: 1024px) { .cap-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px)  { .cap-grid { grid-template-columns: 1fr; } }

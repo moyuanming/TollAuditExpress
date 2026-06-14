@@ -1,0 +1,29 @@
+.stats { background: #f8fafc; padding: 56px 0; }
+.stats-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  text-align: center;
+}
+.stats-num {
+  font-size: 40px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #4f46e5, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1.1;
+}
+.stats-label {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 6px;
+}
+.stats-foot {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 12px;
+  margin: 24px 0 0;
+}
+@media (max-width: 640px) { .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 24px; } }
