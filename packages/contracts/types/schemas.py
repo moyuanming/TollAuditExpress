@@ -1,9 +1,13 @@
 """前后端共享 Pydantic 模型定义 — 接口契约的单一事实来源"""
 
+import re
 from typing import Optional, List, Any
 from enum import Enum
-from pydantic import BaseModel, Field, EmailStr, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class ActionType(str, Enum):
@@ -385,7 +389,7 @@ class LandingLeadCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     phone: str = Field(..., pattern=r"^1[3-9]\d{9}$")
     org: str = Field(..., min_length=1, max_length=100)
-    email: Optional[EmailStr] = None
+    email: Optional[str] = Field(None, max_length=120)
     message: Optional[str] = Field(None, max_length=500)
     source: str = Field("landing-page", max_length=32)
 
@@ -395,6 +399,15 @@ class LandingLeadCreate(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("must not be blank")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v):
+        if v is None or v == "":
+            return None
+        if not _EMAIL_RE.match(v):
+            raise ValueError("invalid email format")
         return v
 
 
