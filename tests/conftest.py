@@ -140,6 +140,35 @@ CREATE TABLE IF NOT EXISTS gateway_topology (
     created_at TEXT,
     updated_at TEXT
 );
+
+-- 007: 货车 OBU 监测 — 每日统计表
+CREATE TABLE IF NOT EXISTS audit_truck_obu_daily_stats (
+    date TEXT NOT NULL,
+    fraud_type TEXT NOT NULL,
+    scanned_count INTEGER NOT NULL DEFAULT 0,
+    suspicious_count INTEGER NOT NULL DEFAULT 0,
+    confirmed_count INTEGER NOT NULL DEFAULT 0,
+    last_run_at TEXT,
+    updated_at TEXT,
+    PRIMARY KEY (date, fraud_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_truck_obu_stats_date
+    ON audit_truck_obu_daily_stats(date);
+
+-- 008: Landing Lead 线索表
+CREATE TABLE IF NOT EXISTS landing_leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    org TEXT NOT NULL,
+    email TEXT,
+    message TEXT,
+    source TEXT DEFAULT 'landing-page',
+    ip TEXT,
+    ua TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -250,6 +279,8 @@ def temp_db():
         patch("apps.api.database.repositories.task_repository.get_connection", _test_get_connection),
         patch("apps.api.database.repositories.rule_repository.get_connection", _test_get_connection),
         patch("apps.api.database.repositories.topology_repository.get_connection", _test_get_connection),
+        patch("apps.api.database.repositories.truck_obu_stats_repository.get_connection", _test_get_connection),
+        patch("apps.api.database.repositories.landing_repository.get_connection", _test_get_connection),
         patch("apps.api.services.rule_loader.get_connection", _test_get_connection),
     ]
     for p in patchers:
@@ -299,6 +330,10 @@ def mock_ai_client():
         'confidence': 0.92,
         'reason': '车牌号一致',
         'model': 'qwen2.5-vl-72b',
+    }
+    fake.recognize_plate.return_value = {
+        'plate': '京A12345',
+        'confidence': 0.95,
     }
     patchers = [
         patch("apps.api.core.vehicle_ai_client.get_client", return_value=fake),
