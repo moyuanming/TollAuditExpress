@@ -2,7 +2,7 @@
 
 from typing import Optional, List, Any
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from datetime import datetime
 
 
@@ -260,6 +260,9 @@ class LlmVehicleCompareResponse(BaseModel):
     exit_image_url: Optional[str] = None
     model: str
     elapsed_ms: int
+    plate_match: Optional[bool] = None
+    plate_recognized_entry: Optional[str] = None
+    plate_recognized_exit: Optional[str] = None
 
 
 class DetectionRuleCreate(BaseModel):
@@ -308,3 +311,108 @@ TripDetailResponse.model_rebuild()
 
 
 TripDetailResponse.model_rebuild()
+
+
+# ---- 货车 OBU 监测（TRUCK_USES_TRUCK_OBU_NON_NEW_A）----
+
+
+class TruckObuDailyStat(BaseModel):
+    """货车 OBU 监测 — 每日统计条目"""
+    date: str                       # YYYY-MM-DD
+    fraud_type: str
+    scanned_count: int = 0
+    suspicious_count: int = 0
+    confirmed_count: int = 0
+    last_run_at: Optional[str] = None
+
+
+class TruckObuDailyStatListResponse(BaseModel):
+    stats: List[TruckObuDailyStat]
+    total: int
+
+
+class TruckObuAnomalyItem(BaseModel):
+    """货车 OBU 监测 — 异常条目（响应），含 source_side（ENTRY/EXIT/BOTH）"""
+    id: int
+    audit_trip_id: int
+    fraud_type: str
+    passid: Optional[str] = None
+    entry_time: Optional[str] = None
+    exit_time: Optional[str] = None
+    entry_station_name: Optional[str] = None
+    exit_station_name: Optional[str] = None
+    entry_vehicle_id: Optional[str] = None
+    exit_vehicle_id: Optional[str] = None
+    entry_vehicle_type: Optional[int] = None
+    exit_vehicle_type: Optional[int] = None
+    entry_obu_id: Optional[str] = None
+    exit_obu_id: Optional[str] = None
+    entry_media_type: Optional[int] = None
+    exit_media_type: Optional[int] = None
+    is_suspicious: int = 1
+    risk_score: float = 0.85
+    process_status: str = 'UNPROCESSED'
+    details: Optional[str] = None
+    source_side: Optional[str] = None
+    created_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TruckObuAnomalyListResponse(BaseModel):
+    anomalies: List[TruckObuAnomalyItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class TruckObuOverviewResponse(BaseModel):
+    """货车 OBU 监测 — 顶部卡片：累计扫描 / 异常 / 待处理 / 已确认 + 最近 30 天趋势"""
+    total_scanned: int = 0
+    total_suspicious: int = 0
+    total_pending: int = 0
+    total_confirmed: int = 0
+    last_run_at: Optional[str] = None
+    last_30_days: List[TruckObuDailyStat] = []
+
+
+# ---- 公开落地页线索 (landing) ----
+
+
+class LandingLeadCreate(BaseModel):
+    """公开落地页表单 — 客户线索入库请求体。"""
+    name: str = Field(..., min_length=1, max_length=50)
+    phone: str = Field(..., pattern=r"^1[3-9]\d{9}$")
+    org: str = Field(..., min_length=1, max_length=100)
+    email: Optional[EmailStr] = None
+    message: Optional[str] = Field(None, max_length=500)
+    source: str = Field("landing-page", max_length=32)
+
+    @field_validator("name", "org")
+    @classmethod
+    def _strip_nonblank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
+class LandingLeadResponse(BaseModel):
+    id: int
+    name: str
+    phone: str
+    org: str
+    email: Optional[str] = None
+    message: Optional[str] = None
+    source: str
+    ip: Optional[str] = None
+    ua: Optional[str] = None
+    created_at: str
+
+
+class LandingLeadListResponse(BaseModel):
+    leads: list
+    total: int
+    limit: int
+    offset: int
