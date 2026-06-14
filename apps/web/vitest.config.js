@@ -20,6 +20,7 @@ export default defineConfig({
       '@testing-library/react': nm('@testing-library/react'),
       '@testing-library/user-event': nm('@testing-library/user-event'),
       '@testing-library/jest-dom': nm('@testing-library/jest-dom'),
+      'react-router-dom': nm('react-router-dom'),
     },
   },
   test: {
