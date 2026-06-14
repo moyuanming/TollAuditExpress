@@ -27,7 +27,9 @@
 | `/app/tasks` | auth | 原 TaskManager |
 | `/app/rules` | auth | 原 RuleStudio |
 | `/redirect` | public | 原 Redirect(不变) |
-| `/login` | public | 现有登录入口(如有) |
+| `/app/login` | public | 跳转到后端配置的 `loginUrl`(外部 OIDC);由 AuthGuard 触发 |
+
+**登录机制说明**:本项目不内置登录页,`AuthGuard` 收到未鉴权请求时直接 `window.location.replace(loginUrl)`(配置项,后端返回)。落地页的「登录后台」按钮直接打开 `/app`(被 AuthGuard 拦下后由现有逻辑跳 OIDC),不需要新写代码。
 
 **老路径兼容**:`/trips`、`/vehicles` 等老链接 → 统一 302 重定向到 `/app/trips` 等,保持外部引用不破。
 
