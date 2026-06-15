@@ -3,7 +3,7 @@
 import re
 from typing import Optional, List, Any
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from datetime import datetime
 
 
@@ -389,7 +389,7 @@ class LandingLeadCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
     phone: str = Field(..., pattern=r"^1[3-9]\d{9}$")
     org: str = Field(..., min_length=1, max_length=100)
-    email: Optional[str] = Field(None, max_length=120)
+    email: Optional[EmailStr] = None
     message: Optional[str] = Field(None, max_length=500)
     source: str = Field("landing-page", max_length=32)
 
