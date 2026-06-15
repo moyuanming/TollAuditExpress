@@ -110,9 +110,51 @@ class VehicleAIClient:
 
         return data
 
+    def _post_multipart(self, path: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+        """multipart/form-data POST — 用于 recognize-plate / plate 等仅接受表单的端点。"""
+        url = f"{self.base_url}{path}"
+        try:
+            with httpx.Client(timeout=self.timeout_s) as client:
+                resp = client.post(url, data=fields)
+        except httpx.HTTPError as e:
+            logger.error(
+                'vehicle_ai_client: HTTP error url=%s timeout=%ss err=%s',
+                url, self.timeout_s, e,
+            )
+            return {'error': 'service_unavailable', 'detail': str(e), 'url': url}
+
+        try:
+            data = resp.json()
+        except ValueError:
+            logger.error(
+                'vehicle_ai_client: non-JSON response url=%s status=%d body=%s',
+                url, resp.status_code, resp.text[:200],
+            )
+            return {
+                'error': 'parse_error',
+                'detail': f'status={resp.status_code} non-JSON',
+                'url': url,
+            }
+
+        if resp.status_code != 200:
+            detail = data.get('detail') if isinstance(data, dict) else None
+            if detail is None:
+                detail = data
+            logger.error(
+                'vehicle_ai_client: non-200 response url=%s status=%d body=%s',
+                url, resp.status_code, str(detail)[:200],
+            )
+            return {'error': 'service_unavailable', 'detail': detail, 'url': url}
+
+        return data
+
     def recognize_plate(self, image_url: str) -> Dict[str, Any]:
-        """车牌 OCR 识别 — 从图片中识别车牌号。"""
-        return self._post('/api/v1/vehicle/recognize-plate', {
+        """车牌 OCR 识别 — 从图片中识别车牌号。
+
+        端点仅接受 multipart/form-data(application/json 会被拒,返回
+        422 missing_input),因此走 _post_multipart 通道。
+        """
+        return self._post_multipart('/api/v1/vehicle/recognize-plate', {
             'image_url': image_url,
         })
 
