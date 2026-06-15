@@ -1,13 +1,8 @@
 """货车 OBU 监测 — 每日统计仓储（兼容 SQLite/Doris）
 
-注意:UPSERT 语法在 SQLite 与 Doris 之间不通用。
-- SQLite: INSERT ... ON CONFLICT(date, fraud_type) DO UPDATE SET ...
-- Doris:  INSERT ... ON DUPLICATE KEY UPDATE ...
-
-我们用 try/except 包装,失败时回落到 SQLite 风格的 ON CONFLICT 语法。
-测试环境是 SQLite,所以主路径走 ON CONFLICT;生产 Doris 第一次跑会因语法差异抛错
-(若生产用 ON CONFLICT 风格),届时把 except 块改成 ON DUPLICATE KEY UPDATE 即可。
-此处为简化,统一使用 ON CONFLICT — 实施时若生产出错,需调整为驱动判断。
+注意:Doris 2.1.9-rc02 不支持 MySQL/PG 风格的 UPSERT 子句
+（ON DUPLICATE KEY UPDATE / ON CONFLICT / REPLACE INTO 全部报语法错）。
+改用 SELECT + INSERT/UPDATE 两步走,SQLite 与 Doris 都能跑。
 """
 
 from typing import Optional, List, Dict
@@ -27,38 +22,42 @@ class TruckObuStatsRepository:
         last_run_at: str,
     ) -> None:
         """按 (date, fraud_type) 累加计数;不存在则 INSERT。
-        SQLite 测试环境走 ON CONFLICT;Doris 生产环境走 ON DUPLICATE KEY UPDATE。
+
+        采用 SELECT + INSERT/UPDATE 两步走 — Doris 2.1.9-rc02 不识别
+        ON DUPLICATE KEY UPDATE / ON CONFLICT,SQLite 也保持同语义。
         """
         with get_connection() as conn:
             cursor = conn.cursor()
-            try:
-                # SQLite 风格
+            cursor.execute(
+                """
+                SELECT scanned_count, suspicious_count
+                FROM audit_truck_obu_daily_stats
+                WHERE date = %s AND fraud_type = %s
+                """,
+                (date, fraud_type),
+            )
+            row = cursor.fetchone()
+            if row is None:
                 cursor.execute(
                     """
                     INSERT INTO audit_truck_obu_daily_stats
                         (date, fraud_type, scanned_count, suspicious_count, last_run_at)
                     VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT(date, fraud_type) DO UPDATE SET
-                        scanned_count     = scanned_count + excluded.scanned_count,
-                        suspicious_count  = suspicious_count + excluded.suspicious_count,
-                        last_run_at       = excluded.last_run_at,
-                        updated_at        = CURRENT_TIMESTAMP
                     """,
-                    (date, fraud_type, scanned_count_delta, suspicious_count_delta, last_run_at),
+                    (date, fraud_type, scanned_count_delta,
+                     suspicious_count_delta, last_run_at),
                 )
-            except Exception:
-                # Doris 风格回退
+            else:
                 cursor.execute(
                     """
-                    INSERT INTO audit_truck_obu_daily_stats
-                        (date, fraud_type, scanned_count, suspicious_count, last_run_at)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        scanned_count     = scanned_count + VALUES(scanned_count),
-                        suspicious_count  = suspicious_count + VALUES(suspicious_count),
-                        last_run_at       = VALUES(last_run_at)
+                    UPDATE audit_truck_obu_daily_stats
+                    SET scanned_count    = scanned_count + %s,
+                        suspicious_count = suspicious_count + %s,
+                        last_run_at      = %s
+                    WHERE date = %s AND fraud_type = %s
                     """,
-                    (date, fraud_type, scanned_count_delta, suspicious_count_delta, last_run_at),
+                    (scanned_count_delta, suspicious_count_delta,
+                     last_run_at, date, fraud_type),
                 )
             conn.commit()
 
