@@ -22,6 +22,7 @@ from apps.api.services.doris_trip_query import (
 from apps.api.services.truck_obu_detector import TruckOBUDetector
 from apps.api.services.entry_exit_matcher import EntryExitMatcher
 from apps.api.services.vehicle_comparator import compare_vehicles_by_passid
+from apps.api.core.vehicle_ai_client import get_client
 from apps.api.database.repositories.trip_repository import (
     TripRepository, SORTABLE_COLUMNS, VEHICLE_TYPE_VALUES, VEHICLE_ID_MATCH_MODES,
 )
@@ -31,6 +32,8 @@ from apps.api.models.schemas import (
     StatsResponse, AggregateRequest, ProcessRequest, DetectRequest,
     RawTripResponse, RawTripListResponse, RawTripDetailResponse,
     DetectEntryExitLLMRequest, LlmVehicleCompareResponse,
+    TruckObuOverviewResponse, TruckObuDailyStat, TruckObuDailyStatListResponse,
+    TruckObuAnomalyItem, TruckObuAnomalyListResponse,
 )
 
 logger = get_logger(__name__)
@@ -523,6 +526,25 @@ async def detect_entry_exit_with_llm(detect_req: DetectEntryExitLLMRequest):
     return result
 
 
+@router.post("/detect/recognize-plate")
+async def recognize_plate(image_url: str = Query(..., description="车牌图片 URL")):
+    """调公共服务 OCR 识别车牌号。
+
+    错误码：
+    - 400：缺 image_url
+    - 502：公共服务不可达 / 响应解析失败
+    """
+    if not image_url.strip():
+        raise HTTPException(status_code=400, detail="image_url required")
+
+    result = await run_in_threadpool(get_client().recognize_plate, image_url)
+
+    if isinstance(result, dict) and 'error' in result:
+        raise HTTPException(status_code=502, detail=result)
+
+    return result
+
+
 @router.post("/trips/re-detect")
 async def re_detect_trips(request: Request, background_tasks: BackgroundTasks):
     """补检测：对缺失视觉识别结果的行程重新运行检测"""
@@ -656,3 +678,112 @@ async def image_proxy(url: str = Query(...)):
             })
     except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=f"Fetch error: {str(e)}")
+
+
+# ---- 货车 OBU 监测（TRUCK_USES_TRUCK_OBU_NON_NEW_A）----
+
+
+@router.get("/truck-obu/overview", response_model=TruckObuOverviewResponse)
+async def get_truck_obu_overview():
+    """顶部卡片：累计扫描 / 异常 / 待处理 / 已确认 + 最近 30 天趋势"""
+    from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
+    from datetime import date, timedelta
+
+    stats_repo = TruckObuStatsRepository()
+    overview = stats_repo.get_overview()
+    pending = AuditRepository().get_suspects_count(
+        fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+        process_status='UNPROCESSED',
+    )
+    overview['total_pending'] = pending
+    overview['last_30_days'] = stats_repo.get_daily_stats(
+        from_date=(date.today() - timedelta(days=29)).isoformat(),
+        to_date=date.today().isoformat(),
+        fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+    )
+    return TruckObuOverviewResponse(**overview)
+
+
+@router.get("/truck-obu/stats/daily", response_model=TruckObuDailyStatListResponse)
+async def get_truck_obu_daily_stats(
+    from_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    to_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    fraud_type: Optional[str] = Query(None, description="默认只取 TRUCK_USES_TRUCK_OBU_NON_NEW_A"),
+):
+    """每日统计（按 fraud_type 聚合）"""
+    from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
+
+    stats_repo = TruckObuStatsRepository()
+    if fraud_type is None:
+        fraud_type = 'TRUCK_USES_TRUCK_OBU_NON_NEW_A'
+    stats = stats_repo.get_daily_stats(from_date=from_date, to_date=to_date, fraud_type=fraud_type)
+    items = [
+        TruckObuDailyStat(
+            date=r['date'],
+            fraud_type=r['fraud_type'],
+            scanned_count=r['scanned_count'],
+            suspicious_count=r['suspicious_count'],
+            confirmed_count=r['confirmed_count'],
+            last_run_at=r.get('last_run_at'),
+        )
+        for r in stats
+    ]
+    return TruckObuDailyStatListResponse(stats=items, total=len(items))
+
+
+@router.get("/truck-obu/anomalies", response_model=TruckObuAnomalyListResponse)
+async def get_truck_obu_anomalies(
+    process_status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """异常记录列表（复用 AuditRepository.get_suspects，仅过滤 fraud_types）"""
+    audit_repo = AuditRepository()
+    rows = audit_repo.get_suspects(
+        fraud_types=['TRUCK_USES_TRUCK_OBU_NON_NEW_A'],
+        process_status=process_status,
+        limit=limit, offset=offset,
+    )
+    total = audit_repo.get_suspects_count(
+        fraud_types=['TRUCK_USES_TRUCK_OBU_NON_NEW_A'],
+        process_status=process_status,
+    )
+    items: List[TruckObuAnomalyItem] = []
+    for r in rows:
+        source_side = None
+        entry_obu_id = None
+        exit_obu_id = None
+        entry_media_type = None
+        exit_media_type = None
+        if r.get('details'):
+            try:
+                d = json.loads(r['details']) if isinstance(r['details'], str) else r['details']
+                source_side = d.get('source_side')
+                entry_obu_id = d.get('entry_obu_id')
+                exit_obu_id = d.get('exit_obu_id')
+                entry_media_type = d.get('entry_media_type')
+                exit_media_type = d.get('exit_media_type')
+            except Exception:
+                pass
+        items.append(TruckObuAnomalyItem(
+            id=r['id'], audit_trip_id=r['audit_trip_id'],
+            fraud_type=r['fraud_type'], passid=r.get('passid'),
+            entry_time=r.get('entry_time'), exit_time=r.get('exit_time'),
+            entry_station_name=r.get('entry_station_name'),
+            exit_station_name=r.get('exit_station_name'),
+            entry_vehicle_id=r.get('entry_vehicle_id'),
+            exit_vehicle_id=r.get('exit_vehicle_id'),
+            entry_vehicle_type=r.get('entry_vehicle_type'),
+            exit_vehicle_type=r.get('exit_vehicle_type'),
+            entry_obu_id=entry_obu_id,
+            exit_obu_id=exit_obu_id,
+            entry_media_type=entry_media_type,
+            exit_media_type=exit_media_type,
+            risk_score=r.get('risk_score', 0.85),
+            process_status=r.get('process_status', 'UNPROCESSED'),
+            details=r.get('details'),
+            source_side=source_side,
+            created_at=r.get('created_at'),
+        ))
+    return TruckObuAnomalyListResponse(anomalies=items, total=total,
+                                       limit=limit, offset=offset)

@@ -5,7 +5,9 @@ const TASK_TYPES = {
   aggregate_detect: '聚合+检测',
   detect_only: '仅检测',
   multi_detect: '多维度检测',
-  re_detect: '补检测'
+  re_detect: '补检测',
+  truck_obu_audit: '🚛 货车OBU监测',
+  llm_verify: '🧠 AI 二次复核'
 }
 
 const FRAUD_TYPE_LABEL = {
@@ -339,6 +341,8 @@ function TaskManager() {
                   <option value="detect_only">仅检测</option>
                   <option value="multi_detect">多维度检测（规则引擎+多 detector）</option>
                   <option value="re_detect">补检测</option>
+                  <option value="truck_obu_audit">🚛 货车OBU监测（纯元数据）</option>
+                  <option value="llm_verify">🧠 AI 二次复核</option>
                 </select>
               </div>
 

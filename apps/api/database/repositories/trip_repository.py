@@ -372,6 +372,59 @@ class TripRepository:
             )
             return [dict(row) for row in cursor.fetchall()]
 
+    def find_truck_obu_candidates(
+        self,
+        vehicle_types: List[int],
+        media_type: int,
+        plate_prefix_exclude: str,
+        start_time: str,
+        end_time: str,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> List[Dict]:
+        """查询货车+OBU+非新A 的候选 trip（带分页）。
+
+        任一侧（入口/出口）满足以下三条即视为候选:
+          1. vehicle_type ∈ vehicle_types（如 14/15/16）
+          2. media_type == 1（OBU 介质）
+          3. vehicle_id NOT LIKE '新A%'（非新A 开头）
+
+        注：不走 _build_where,因为现有 _build_where 的 vehicle_type 过滤只支持 {1, 2},
+        不支持 IN (14, 15, 16)。这里直接拼一个专用查询。
+        """
+        placeholders = ",".join(["%s"] * len(vehicle_types))
+        sql = f"""
+            SELECT id, passid, entry_time, exit_time,
+                   entry_vehicle_id, exit_vehicle_id,
+                   entry_vehicle_type, exit_vehicle_type,
+                   entry_media_type, exit_media_type,
+                   entry_obu_id, exit_obu_id
+            FROM audit_trips
+            WHERE entry_time >= %s AND entry_time < %s
+              AND (
+                   (entry_vehicle_type IN ({placeholders})
+                    AND entry_media_type = %s
+                    AND entry_vehicle_id IS NOT NULL
+                    AND entry_vehicle_id NOT LIKE %s)
+                OR (exit_vehicle_type IN ({placeholders})
+                    AND exit_media_type = %s
+                    AND exit_vehicle_id IS NOT NULL
+                    AND exit_vehicle_id NOT LIKE %s)
+              )
+            ORDER BY entry_time ASC
+            LIMIT %s OFFSET %s
+        """
+        params = [
+            start_time, end_time,
+            *vehicle_types, media_type, f"{plate_prefix_exclude}%",
+            *vehicle_types, media_type, f"{plate_prefix_exclude}%",
+            limit, offset,
+        ]
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return [dict(r) for r in cursor.fetchall()]
+
     def update_status(self, passid: str, status: str, risk_score: float = 0):
         with get_connection() as conn:
             cursor = conn.cursor()

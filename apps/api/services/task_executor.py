@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime, timedelta
 from threading import local
 from typing import Dict, List
 
@@ -69,6 +70,8 @@ def execute_task(task: dict) -> dict:
         return _execute_multi_detect(filter_rules, trip_repo)
     elif task_type == 're_detect':
         return _execute_re_detect(trip_repo)
+    elif task_type == 'truck_obu_audit':
+        return _execute_truck_obu_audit(filter_rules, task, trip_repo)
     elif task_type == 'llm_verify':
         return _execute_llm_verify(filter_rules)
     else:
@@ -368,3 +371,128 @@ def _execute_multi_detect(filter_rules: dict, trip_repo) -> dict:
                 logger.error("Save error for %s: %s", passid, e)
 
     return {"multi_detect": True, "detected": detected, "suspected": suspected}
+
+
+# ---- 货车 OBU 监测（task_type='truck_obu_audit'）----
+
+
+def _execute_truck_obu_audit(filter_rules: dict, task: dict, trip_repo) -> dict:
+    """非新A开头货车+OBU介质的纯元数据检测器。
+
+    调度语义:
+      - 首次执行（last_run_at 为空）→ 扫描窗口 [start_time, NOW]
+      - 增量执行 → 扫描窗口 [last_run_at - 5min, NOW]（重叠容错防漏边界）
+
+    返回 dict 含:
+      - scanned: 候选 trip 总数
+      - suspicious: 命中并写入 audit_results 的条数
+      - window_start / window_end: 实际扫描窗口
+      - anomaly_count / anomaly_ids_sample: 命中的 audit_results.id 列表（前 50 个）
+    """
+    from apps.api.services.truck_obu_metadata_detector import detect_trip, FRAUD_TYPE
+    from apps.api.database.repositories.audit_repository import AuditRepository
+    from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
+
+    rules = _normalize_truck_obu_rules(filter_rules or {})
+    audit_repo = AuditRepository()
+    stats_repo = TruckObuStatsRepository()
+
+    last_run_at = task.get('last_run_at')
+    if last_run_at:
+        start_dt = _parse_dt(last_run_at) - timedelta(minutes=5)
+    else:
+        start_dt = _parse_dt(rules['start_time'])
+    end_dt = datetime.now()
+    logger.info("Truck OBU audit window: %s ~ %s", start_dt, end_dt)
+
+    scanned = 0
+    suspicious = 0
+    new_anomaly_ids: List[int] = []
+    offset = 0
+    while scanned < rules['limit']:
+        rows = trip_repo.find_truck_obu_candidates(
+            vehicle_types=rules['vehicle_types'],
+            media_type=rules['media_type'],
+            plate_prefix_exclude=rules['plate_prefix_exclude'],
+            start_time=start_dt.strftime('%Y-%m-%d %H:%M:%S'),
+            end_time=end_dt.strftime('%Y-%m-%d %H:%M:%S'),
+            limit=rules['page_size'],
+            offset=offset,
+        )
+        if not rows:
+            break
+        scanned += len(rows)
+        for trip in rows:
+            details = detect_trip(trip)
+            if details is None:
+                continue
+            try:
+                rid = audit_repo.save_result({
+                    'audit_trip_id': trip['id'],
+                    'fraud_type': FRAUD_TYPE,
+                    'entry_vehicle_type': details['entry_vehicle_type'],
+                    'exit_vehicle_type': details['exit_vehicle_type'],
+                    'is_suspicious': 1,
+                    'risk_score': details['risk_score'],
+                    'details': json.dumps({
+                        'source_side': details['source_side'],
+                        'entry_obu_id': details['entry_obu_id'],
+                        'exit_obu_id': details['exit_obu_id'],
+                        'entry_media_type': details['entry_media_type'],
+                        'exit_media_type': details['exit_media_type'],
+                        'rule_version': 'v1',
+                    }, ensure_ascii=False),
+                })
+                new_anomaly_ids.append(rid)
+                suspicious += 1
+            except Exception as e:
+                logger.warning(
+                    "save audit_result failed for passid=%s: %s",
+                    trip.get('passid'), e,
+                )
+        if len(rows) < rules['page_size']:
+            break
+        offset += rules['page_size']
+
+    day = start_dt.strftime('%Y-%m-%d')
+    stats_repo.upsert_daily_stat(
+        date=day,
+        fraud_type=FRAUD_TYPE,
+        scanned_count_delta=scanned,
+        suspicious_count_delta=suspicious,
+        last_run_at=end_dt.strftime('%Y-%m-%d %H:%M:%S'),
+    )
+
+    return {
+        'task_type': 'truck_obu_audit',
+        'window_start': start_dt.strftime('%Y-%m-%d %H:%M:%S'),
+        'window_end': end_dt.strftime('%Y-%m-%d %H:%M:%S'),
+        'scanned': scanned,
+        'suspicious': suspicious,
+        'anomaly_count': len(new_anomaly_ids),
+        'anomaly_ids_sample': new_anomaly_ids[:50],
+    }
+
+
+def _normalize_truck_obu_rules(filter_rules: dict) -> dict:
+    return {
+        'start_time': filter_rules.get('start_time', '2026-06-01 00:00:00'),
+        'vehicle_types': list(filter_rules.get('vehicle_types', [14, 15, 16])),
+        'media_type': int(filter_rules.get('media_type', 1)),
+        'plate_prefix_exclude': filter_rules.get('plate_prefix_exclude', '新A'),
+        'limit': int(filter_rules.get('limit', 2000)),
+        'page_size': int(filter_rules.get('page_size', 500)),
+    }
+
+
+def _parse_dt(s) -> datetime:
+    if isinstance(s, datetime):
+        return s
+    if not s:
+        return datetime.now()
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(s, fmt)
+        except (ValueError, TypeError):
+            continue
+    return datetime.now()

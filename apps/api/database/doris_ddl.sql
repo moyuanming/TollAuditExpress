@@ -198,3 +198,29 @@ PROPERTIES (
 -- audit_results 扩展字段：命中的规则 ID 与 dry-run 标记
 ALTER TABLE audit_results ADD COLUMN IF NOT EXISTS rule_id BIGINT COMMENT '命中的 detection_rules.id';
 ALTER TABLE audit_results ADD COLUMN IF NOT EXISTS dry_run TINYINT DEFAULT "0" COMMENT 'dry-run 模式标记';
+
+-- 货车 OBU 监测 — 每日统计表（007 迁移）
+-- 设计要点：
+--   - (date, fraud_type) 联合主键，覆盖按日聚合查询
+--   - scanned_count: 该日累计扫描 trip 数（去重后）
+--   - suspicious_count: 该日写入 audit_results 的可疑数
+--   - confirmed_count: 该日已 CONFIRMED 数（process_status='CONFIRMED'）
+--   - last_run_at: 该日最后一次任务执行时间
+CREATE TABLE IF NOT EXISTS audit_truck_obu_daily_stats (
+    date DATE NOT NULL,
+    fraud_type VARCHAR(50) NOT NULL,
+    scanned_count BIGINT NOT NULL DEFAULT 0,
+    suspicious_count BIGINT NOT NULL DEFAULT 0,
+    confirmed_count BIGINT NOT NULL DEFAULT 0,
+    last_run_at DATETIME,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+)
+UNIQUE KEY(date, fraud_type)
+DISTRIBUTED BY HASH(fraud_type) BUCKETS 4
+PROPERTIES (
+    "replication_num" = "1",
+    "enable_unique_key_merge_on_write" = "true"
+);
+
+-- audit_results 加索引支持新 fraud_type 扫描
+ALTER TABLE audit_results ADD INDEX IF NOT EXISTS idx_results_type_created (fraud_type, created_at);

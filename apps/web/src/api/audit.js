@@ -157,6 +157,23 @@ export const auditApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ passid })
     })
+  },
+
+  // 货车 OBU 监测 — 顶部概览 (累计/异常/待处理/已确认 + 最近 30 天趋势)
+  async getTruckObuOverview() {
+    return fetchJSON(`${API_BASE}/truck-obu/overview`)
+  },
+
+  // 货车 OBU 监测 — 按日统计列表
+  async getTruckObuDailyStats(params = {}) {
+    const qs = new URLSearchParams(params).toString()
+    return fetchJSON(`${API_BASE}/truck-obu/stats/daily${qs ? `?${qs}` : ''}`)
+  },
+
+  // 货车 OBU 监测 — 异常记录列表
+  async getTruckObuAnomalies(params = {}) {
+    const qs = new URLSearchParams(params).toString()
+    return fetchJSON(`${API_BASE}/truck-obu/anomalies${qs ? `?${qs}` : ''}`)
   }
 }
 
