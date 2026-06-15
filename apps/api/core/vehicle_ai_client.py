@@ -3,12 +3,14 @@
 提供：
 - get_client() 单例
 - VehicleAIClient.compare(image_url_a, image_url_b, **metadata)
-    把 9 项廉价信号（车牌/OBU/颜色/车型/fingerprint_sim）随请求体透传，
+    把廉价信号（车牌/OBU/颜色/车型/fingerprint_sim/车牌OCR）随请求体透传，
     让侧车在分档裁决器中尽量绕开 LLM 调用。
 - VehicleAIClient.entry_exit(entry_url, exit_url)
     出入口车辆比对
 - VehicleAIClient.truck_obu(image_url, declared_vehicle_type=1)
     货车套用客车OBU检测
+- VehicleAIClient.recognize_plate(image_url)
+    车牌 OCR 识别
 """
 
 from typing import Any, Dict, Optional
@@ -44,6 +46,9 @@ class VehicleAIClient:
         entry_visual_type: Optional[str] = None,
         exit_visual_type: Optional[str] = None,
         fingerprint_sim: Optional[float] = None,
+        entry_plate_ocr: Optional[str] = None,
+        exit_plate_ocr: Optional[str] = None,
+        plate_match: Optional[bool] = None,
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             'image_url_a': image_url_a,
@@ -59,6 +64,9 @@ class VehicleAIClient:
             ('entry_visual_type', entry_visual_type),
             ('exit_visual_type', exit_visual_type),
             ('fingerprint_sim', fingerprint_sim),
+            ('entry_plate_ocr', entry_plate_ocr),
+            ('exit_plate_ocr', exit_plate_ocr),
+            ('plate_match', plate_match),
         ):
             if value is not None:
                 payload[key] = value
@@ -101,6 +109,12 @@ class VehicleAIClient:
             return {'error': 'service_unavailable', 'detail': detail, 'url': url}
 
         return data
+
+    def recognize_plate(self, image_url: str) -> Dict[str, Any]:
+        """车牌 OCR 识别 — 从图片中识别车牌号。"""
+        return self._post('/api/v1/vehicle/recognize-plate', {
+            'image_url': image_url,
+        })
 
     def entry_exit(self, entry_url: str, exit_url: str) -> Dict[str, Any]:
         """出入口车辆比对 — 判断入出口是否为同一辆车。"""

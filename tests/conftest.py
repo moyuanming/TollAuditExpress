@@ -308,10 +308,12 @@ def mock_ai_client():
     fake = MagicMock()
     fake.truck_obu.return_value = {
         'is_suspicious': True,
-        'fraud_type': 'TRUCK_USES_PASSENGER_OBU',
+        'fraud_type': 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
         'visual_vehicle_type': 'truck',
         'is_truck': True,
         'confidence': 0.95,
+        'llm_verified': True,
+        'llm_confidence': 0.93,
     }
     fake.entry_exit.return_value = {
         'is_suspicious': False,
@@ -337,7 +339,7 @@ def mock_ai_client():
     }
     patchers = [
         patch("apps.api.core.vehicle_ai_client.get_client", return_value=fake),
-        patch("apps.api.services.truck_obu_detector.get_client", return_value=fake),
+        patch("apps.api.services.passenger_obu_detector.get_client", return_value=fake),
         patch("apps.api.services.entry_exit_matcher.get_client", return_value=fake),
         patch("apps.api.services.vehicle_comparator.get_client", return_value=fake),
     ]
@@ -352,13 +354,10 @@ def mock_ai_client():
 
 @pytest.fixture
 def mock_image_download():
-    """Mock 图片下载 — TruckOBUDetector/EntryExitMatcher 走公共服务后不再调用本地下载,但保留为 no-op 以避免依赖业务代码里残留的 import。"""
+    """Mock 图片下载 — 视觉检测器走公共服务后不再调用本地下载,但保留为 no-op 以避免依赖业务代码里残留的 import。"""
     fake_bytes = BytesIO(b'fake-image-data')
     with patch(
         'apps.api.services.entry_exit_matcher.download_image',
-        return_value=fake_bytes
-    ), patch(
-        'apps.api.services.truck_obu_detector.download_image',
         return_value=fake_bytes
     ), patch(
         'apps.api.services.image_utils.download_image',

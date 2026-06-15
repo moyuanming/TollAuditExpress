@@ -132,9 +132,9 @@ export const auditApi = {
     })
   },
 
-  // 检测货车套用OBU
-  async detectTruckOBU(passid) {
-    return fetchJSON(`${API_BASE}/detect/truck-obu`, {
+  // 检测客车套用货车 OBU（图片识别为货车 + LLM 复核）
+  async detectPassengerOBU(passid) {
+    return fetchJSON(`${API_BASE}/detect/passenger-obu`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ passid })
@@ -159,21 +159,21 @@ export const auditApi = {
     })
   },
 
-  // 货车 OBU 监测 — 顶部概览 (累计/异常/待处理/已确认 + 最近 30 天趋势)
-  async getTruckObuOverview() {
-    return fetchJSON(`${API_BASE}/truck-obu/overview`)
+  // 客车 OBU 监测 — 顶部概览 (累计/异常/待处理/已确认 + 最近 30 天趋势)
+  async getPassengerObuOverview() {
+    return fetchJSON(`${API_BASE}/passenger-obu/overview`)
   },
 
-  // 货车 OBU 监测 — 按日统计列表
-  async getTruckObuDailyStats(params = {}) {
+  // 客车 OBU 监测 — 按日统计列表
+  async getPassengerObuDailyStats(params = {}) {
     const qs = new URLSearchParams(params).toString()
-    return fetchJSON(`${API_BASE}/truck-obu/stats/daily${qs ? `?${qs}` : ''}`)
+    return fetchJSON(`${API_BASE}/passenger-obu/stats/daily${qs ? `?${qs}` : ''}`)
   },
 
-  // 货车 OBU 监测 — 异常记录列表
-  async getTruckObuAnomalies(params = {}) {
+  // 客车 OBU 监测 — 异常记录列表
+  async getPassengerObuAnomalies(params = {}) {
     const qs = new URLSearchParams(params).toString()
-    return fetchJSON(`${API_BASE}/truck-obu/anomalies${qs ? `?${qs}` : ''}`)
+    return fetchJSON(`${API_BASE}/passenger-obu/anomalies${qs ? `?${qs}` : ''}`)
   }
 }
 

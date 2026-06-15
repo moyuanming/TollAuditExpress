@@ -4,7 +4,7 @@
 export type ActionType = 'CONFIRMED' | 'REJECTED';
 export type AuditStatus = 'PENDING' | 'SUSPECTED' | 'VERIFIED' | 'CLEAN';
 export type ProcessStatus = 'UNPROCESSED' | 'CONFIRMED' | 'REJECTED';
-export type FraudType = 'TRUCK_USES_PASSENGER_OBU' | 'ENTRY_EXIT_MISMATCH';
+export type FraudType = 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A' | 'ENTRY_EXIT_MISMATCH';
 
 // === Request DTOs ===
 export interface AggregateRequest {

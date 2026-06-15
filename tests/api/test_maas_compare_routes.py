@@ -92,6 +92,9 @@ class TestDetectEntryExitLlmRoute:
             'exit_image_url': 'http://x/exit.jpg',
             'model': 'qwen2.5-vl-72b',
             'elapsed_ms': 1234,
+            'plate_match': None,
+            'plate_recognized_entry': None,
+            'plate_recognized_exit': None,
         }
         with patch(
             'apps.api.routers.audit.compare_vehicles_by_passid',

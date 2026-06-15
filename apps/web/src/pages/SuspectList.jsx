@@ -5,7 +5,7 @@ import VehicleTripDetail from '../components/VehicleTripDetail'
 import { formatTime } from '../components/tripDetailUtils'
 
 const FRAUD_TYPE_LABEL = {
-  TRUCK_USES_PASSENGER_OBU: '🚛 货车套OBU',
+  PASSENGER_USES_TRUCK_OBU_NON_NEW_A: '🚗 客车套货OBU',
   TRUCK_AS_CAR: '🚛 货套客',
   ENTRY_EXIT_MISMATCH: '🚗 出入口不一致',
   GATEWAY_ANOMALY: '🛣️ 门架异常',
@@ -16,7 +16,7 @@ const FRAUD_TYPE_LABEL = {
 }
 
 const FRAUD_TYPE_FILTER_OPTIONS = [
-  { value: 'TRUCK_USES_PASSENGER_OBU', label: '🚛 货套OBU' },
+  { value: 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A', label: '🚗 客套货OBU' },
   { value: 'TRUCK_AS_CAR', label: '🚛 货套客' },
   { value: 'ENTRY_EXIT_MISMATCH', label: '🚗 出入口' },
   { value: 'GATEWAY_ANOMALY', label: '🛣️ 门架异常' },
@@ -27,7 +27,7 @@ const FRAUD_TYPE_FILTER_OPTIONS = [
 ]
 
 const FRAUD_TYPE_BADGE_CLASS = {
-  TRUCK_USES_PASSENGER_OBU: 'badge-purple',
+  PASSENGER_USES_TRUCK_OBU_NON_NEW_A: 'badge-purple',
   TRUCK_AS_CAR: 'badge-purple',
   GATEWAY_ANOMALY: 'badge-warning',
   VEHICLE_TYPE_DOWNGRADE: 'badge-danger',

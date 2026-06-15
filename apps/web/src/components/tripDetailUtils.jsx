@@ -9,11 +9,13 @@ export function formatTime(t) {
 
 export function buildDecisionSummary(suspect) {
   const points = []
-  if (suspect.fraud_type === 'TRUCK_USES_PASSENGER_OBU') {
+  if (suspect.fraud_type === 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A') {
     const registered = suspect.entry_vehicle_type === 1 ? '客车' : suspect.entry_vehicle_type === 2 ? '货车' : `类型${suspect.entry_vehicle_type}`
-    const visual = suspect.entry_visual_type || '未识别'
+    const visual = suspect.entry_visual_type || suspect.exit_visual_type || '未识别'
+    const llmVerified = suspect.llm_verified === true ? '已通过' : suspect.llm_verified === false ? '未通过' : '未复核'
     points.push({ label: '车型登记', value: registered, status: 'normal' })
-    points.push({ label: 'AI 视觉识别', value: visual, status: visual === 'truck' ? 'abnormal' : 'normal' })
+    points.push({ label: 'AI 视觉识别', value: visual, status: visual && visual !== '未识别' ? 'abnormal' : 'normal' })
+    points.push({ label: 'LLM 复核', value: llmVerified, status: llmVerified === '已通过' ? 'abnormal' : 'normal' })
     if (suspect.risk_score != null) {
       points.push({
         label: 'AI 置信度',

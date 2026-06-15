@@ -7,12 +7,13 @@
     - 入/出口图片 URL 取自 trip_aggregator.aggregate_trip(passid)
     - 入/出口车牌/OBU 取自同一个 trip dict
     - 视觉信号（颜色/车型/fingerprint_sim）取自 audit_results 表
+    - 车牌 OCR 信号取自 recognize_plate 接口
     - 缺任一图片 URL → 400（image_url_missing）
     - 调公共服务失败 → service_unavailable，不抛异常
     - 元数据完整时优先走侧车的分档裁决，完全省去 LLM
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from apps.api.core.logging_config import get_logger
 from apps.api.core.vehicle_ai_client import get_client
@@ -54,12 +55,26 @@ def _fetch_visual_features(passid: str) -> Dict[str, Any]:
     }
 
 
+def _recognize_plate_safe(image_url: str) -> Optional[Dict]:
+    """调用车牌 OCR 识别，失败时返回 None。"""
+    if not image_url:
+        return None
+    try:
+        result = get_client().recognize_plate(image_url)
+        if isinstance(result, dict) and 'error' not in result and result.get('plate'):
+            return result
+    except Exception as e:
+        logger.warning('recognize_plate failed for %s: %s', image_url, e)
+    return None
+
+
 def compare_vehicles_by_passid(passid: str) -> Dict[str, Any]:
-    """按 passid 取行程后，把图片 URL + 9 项元数据透传给 vehicle-ai-service。
+    """按 passid 取行程后，把图片 URL + 元数据 + 车牌 OCR 信号透传给 vehicle-ai-service。
 
     Returns:
         成功：{'passid', 'is_same_vehicle', 'confidence', 'reason',
-              'entry_image_url', 'exit_image_url', 'model', 'elapsed_ms'}
+              'entry_image_url', 'exit_image_url', 'model', 'elapsed_ms',
+              'plate_match', 'plate_recognized_entry', 'plate_recognized_exit'}
         失败：{'error': 'trip_not_found'|'image_url_missing'|'service_unavailable'|
                        'parse_error', ...}
     """
@@ -80,6 +95,20 @@ def compare_vehicles_by_passid(passid: str) -> Dict[str, Any]:
 
     visual = _fetch_visual_features(passid)
 
+    # 车牌 OCR 识别
+    entry_ocr = _recognize_plate_safe(entry_url)
+    exit_ocr = _recognize_plate_safe(exit_url)
+
+    entry_plate_ocr = None
+    exit_plate_ocr = None
+    plate_match = None
+    if entry_ocr:
+        entry_plate_ocr = entry_ocr.get('plate')
+    if exit_ocr:
+        exit_plate_ocr = exit_ocr.get('plate')
+    if entry_plate_ocr and exit_plate_ocr:
+        plate_match = (entry_plate_ocr or '').strip().upper() == (exit_plate_ocr or '').strip().upper()
+
     try:
         result = get_client().compare(
             entry_url,
@@ -93,6 +122,9 @@ def compare_vehicles_by_passid(passid: str) -> Dict[str, Any]:
             entry_visual_type=visual.get('entry_visual_type'),
             exit_visual_type=visual.get('exit_visual_type'),
             fingerprint_sim=visual.get('fingerprint_sim'),
+            entry_plate_ocr=entry_plate_ocr,
+            exit_plate_ocr=exit_plate_ocr,
+            plate_match=plate_match,
         )
     except Exception as e:
         logger.warning('compare service raised for %s: %s', passid, e)
@@ -119,4 +151,7 @@ def compare_vehicles_by_passid(passid: str) -> Dict[str, Any]:
         'exit_image_url': exit_url,
         'model': str(result.get('model', '')),
         'elapsed_ms': int(result.get('elapsed_ms', 0)),
+        'plate_match': plate_match,
+        'plate_recognized_entry': entry_plate_ocr,
+        'plate_recognized_exit': exit_plate_ocr,
     }

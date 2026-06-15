@@ -6,7 +6,7 @@ import VehicleQuery from './pages/VehicleQuery'
 import SuspectList from './pages/SuspectList'
 import Statistics from './pages/Statistics'
 import TaskManager from './pages/TaskManager'
-import TruckOBUMonitor from './pages/TruckOBUMonitor'
+import PassengerOBUMonitor from './pages/PassengerOBUMonitor'
 import RuleStudio from './pages/RuleStudio'
 import Redirect from './pages/Redirect'
 import Landing from './pages/Landing/Landing'
@@ -42,8 +42,8 @@ function AppNav() {
         <NavLink to="/app/tasks" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
           ⏰ 定时任务
         </NavLink>
-        <NavLink to="/app/truck-obu-monitor" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          🚛 货车OBU监测
+        <NavLink to="/app/passenger-obu-monitor" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
+          🚗 客车OBU监测
         </NavLink>
         <NavLink to="/app/rules" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
           📐 规则管理
@@ -62,7 +62,8 @@ const OLD_PATH_REDIRECTS = {
   '/suspects': '/app/suspects',
   '/stats': '/app/stats',
   '/tasks': '/app/tasks',
-  '/truck-obu-monitor': '/app/truck-obu-monitor',
+  '/passenger-obu-monitor': '/app/passenger-obu-monitor',
+  '/truck-obu-monitor': '/app/passenger-obu-monitor',
   '/rules': '/app/rules',
 }
 
@@ -99,6 +100,7 @@ function App() {
             <Route path="/stats" element={<LegacyRedirect />} />
             <Route path="/tasks" element={<LegacyRedirect />} />
             <Route path="/truck-obu-monitor" element={<LegacyRedirect />} />
+            <Route path="/passenger-obu-monitor" element={<LegacyRedirect />} />
             <Route path="/rules" element={<LegacyRedirect />} />
 
             {/* 内部 /app/* 受 AuthGuard 保护 */}
@@ -113,7 +115,7 @@ function App() {
                     <Route path="suspects" element={<SuspectList />} />
                     <Route path="stats" element={<Statistics />} />
                     <Route path="tasks" element={<TaskManager />} />
-                    <Route path="truck-obu-monitor" element={<TruckOBUMonitor />} />
+                    <Route path="passenger-obu-monitor" element={<PassengerOBUMonitor />} />
                     <Route path="rules" element={<RuleStudio />} />
                     <Route path="*" element={<Navigate to="/app" replace />} />
                   </Routes>

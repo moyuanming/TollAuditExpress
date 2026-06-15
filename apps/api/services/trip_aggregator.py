@@ -323,14 +323,7 @@ def get_recent_passids(days: int = 7, limit: int = 100) -> List[str]:
 class TripAggregator:
     """行程聚合器 - 支持自动视觉检测"""
 
-    _truck_detector = None
     _entry_exit_matcher = None
-
-    def _get_truck_detector(self):
-        if TripAggregator._truck_detector is None:
-            from apps.api.services.truck_obu_detector import TruckOBUDetector
-            TripAggregator._truck_detector = TruckOBUDetector()
-        return TripAggregator._truck_detector
 
     def _get_entry_exit_matcher(self):
         if TripAggregator._entry_exit_matcher is None:
@@ -341,30 +334,6 @@ class TripAggregator:
     def _run_detection(self, trip_data: Dict, trip_id: int):
         """对行程运行视觉检测"""
         results_to_save = []
-
-        # Model A: 货车套用客车OBU检测
-        try:
-            detector = self._get_truck_detector()
-            entry_record = {
-                'VEHICLETYPE': trip_data.get('entry_vehicle_type'),
-                'image_trans': trip_data.get('entry_image_trans')
-            }
-            model_a_result = detector.detect(entry_record)
-
-            if model_a_result.get('visual_vehicle_type'):
-                is_sus = 1 if model_a_result.get('is_suspicious') else 0
-                risk = model_a_result.get('confidence', 0) if is_sus else 0
-                results_to_save.append({
-                    'audit_trip_id': trip_id,
-                    'fraud_type': 'TRUCK_USES_PASSENGER_OBU',
-                    'entry_vehicle_type': trip_data.get('entry_vehicle_type'),
-                    'entry_visual_type': model_a_result.get('visual_vehicle_type'),
-                    'is_suspicious': is_sus,
-                    'risk_score': risk,
-                    'details': json.dumps(model_a_result)
-                })
-        except Exception as e:
-            logger.error("Model A detection error: %s", e)
 
         # Model B: 出入口车辆比对
         try:

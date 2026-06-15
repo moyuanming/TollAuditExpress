@@ -148,9 +148,24 @@ class TestTripAggregator:
 
         trip = repo.get_trip_detail('TEST001')
         assert trip is not None
+        # Model B 始终把识别结果写进 entry_visual_type / exit_visual_type
         assert trip['entry_visual_type'] == 'truck'
-        assert trip['audit_status'] == 'SUSPECTED'
-        assert trip['risk_score'] > 0
+        # conftest mock 的 entry_exit 返回 is_suspicious=False,
+        # 所以 _run_detection 不会把 audit_status 升级到 SUSPECTED,仍为 PENDING
+        assert trip['audit_status'] == 'PENDING'
+        # 但 audit_results 仍会写入一条 ENTRY_EXIT_MISMATCH 记录(写库后再判命中)。
+        # 注意:get_suspects 会过滤 is_suspicious=0,所以这里直接走原始 SQL 验证。
+        from apps.api.database.doris_connection import get_connection
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT fraud_type, is_suspicious, audit_trip_id FROM audit_results"
+            )
+            rows = cursor.fetchall()
+        assert len(rows) == 1
+        assert rows[0]['fraud_type'] == 'ENTRY_EXIT_MISMATCH'
+        assert rows[0]['is_suspicious'] == 0
+        assert rows[0]['audit_trip_id'] == trip_id
 
     def test_run_detection_no_images(self, temp_db, monkeypatch):
         """测试无图片时不崩溃"""

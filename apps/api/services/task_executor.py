@@ -2,11 +2,14 @@
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from threading import local
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
+
+# 容器是 UTC，DB 走北京时间 — 与各 repository 一致
+_BEIJING_TZ = timezone(timedelta(hours=8))
 
 # 当前线程正在执行的 execution_id（由调度器在启动执行线程时设置）
 _ctx = local()
@@ -70,8 +73,8 @@ def execute_task(task: dict) -> dict:
         return _execute_multi_detect(filter_rules, trip_repo)
     elif task_type == 're_detect':
         return _execute_re_detect(trip_repo)
-    elif task_type == 'truck_obu_audit':
-        return _execute_truck_obu_audit(filter_rules, task, trip_repo)
+    elif task_type == 'passenger_obu_audit':
+        return _execute_passenger_obu_audit(filter_rules, task, trip_repo)
     elif task_type == 'llm_verify':
         return _execute_llm_verify(filter_rules)
     else:
@@ -154,16 +157,14 @@ def _targeted_aggregate(exit_station: str, entry_station: str, days: int, limit:
 
 
 def _execute_detect_only(filter_rules: dict, trip_repo) -> dict:
-    """仅检测"""
+    """仅检测 (entry-exit 比对)。客车 OBU 套用检测由 passenger_obu_audit 任务独立负责。"""
     exit_station = filter_rules.get('exit_station', '')
     entry_station = filter_rules.get('entry_station', '')
     limit = filter_rules.get('limit', 200)
 
-    from apps.api.services.truck_obu_detector import TruckOBUDetector
     from apps.api.services.entry_exit_matcher import EntryExitMatcher
 
     trips = trip_repo.get_trips_without_visual(limit=limit)
-    detector = TruckOBUDetector()
     matcher = EntryExitMatcher()
     detected = 0
     suspected = 0
@@ -178,26 +179,6 @@ def _execute_detect_only(filter_rules: dict, trip_repo) -> dict:
             continue
 
         trip_results = []
-        if trip.get('entry_vehicle_type') == 1:
-            try:
-                r = detector.detect({
-                    'VEHICLETYPE': trip.get('entry_vehicle_type'),
-                    'image_trans': trip.get('entry_image_trans')
-                })
-                if r.get('visual_vehicle_type'):
-                    is_sus = 1 if r.get('is_suspicious') else 0
-                    trip_results.append({
-                        'audit_trip_id': trip_id,
-                        'fraud_type': 'TRUCK_USES_PASSENGER_OBU',
-                        'entry_vehicle_type': trip.get('entry_vehicle_type'),
-                        'entry_visual_type': r.get('visual_vehicle_type'),
-                        'is_suspicious': is_sus,
-                        'risk_score': r.get('confidence', 0) if is_sus else 0,
-                        'details': json.dumps(r)
-                    })
-            except Exception as e:
-                logger.debug("Model A error: %s", e)
-
         try:
             r = matcher.compare(
                 {'image_license': trip.get('entry_image_license')},
@@ -231,12 +212,10 @@ def _execute_detect_only(filter_rules: dict, trip_repo) -> dict:
 
 
 def _execute_re_detect(trip_repo) -> dict:
-    """补检测"""
-    from apps.api.services.truck_obu_detector import TruckOBUDetector
+    """补检测 (entry-exit 比对)。客车 OBU 套用检测由 passenger_obu_audit 任务独立负责。"""
     from apps.api.services.entry_exit_matcher import EntryExitMatcher
 
     trips = trip_repo.get_trips_without_visual(limit=500)
-    detector = TruckOBUDetector()
     matcher = EntryExitMatcher()
     detected = 0
     suspected = 0
@@ -245,26 +224,6 @@ def _execute_re_detect(trip_repo) -> dict:
         trip_id = trip['id']
         passid = trip['passid']
         trip_results = []
-
-        if trip.get('entry_vehicle_type') == 1 and trip.get('entry_image_trans'):
-            try:
-                r = detector.detect({
-                    'VEHICLETYPE': trip.get('entry_vehicle_type'),
-                    'image_trans': trip.get('entry_image_trans')
-                })
-                if r.get('visual_vehicle_type'):
-                    is_sus = 1 if r.get('is_suspicious') else 0
-                    trip_results.append({
-                        'audit_trip_id': trip_id,
-                        'fraud_type': 'TRUCK_USES_PASSENGER_OBU',
-                        'entry_vehicle_type': trip.get('entry_vehicle_type'),
-                        'entry_visual_type': r.get('visual_vehicle_type'),
-                        'is_suspicious': is_sus,
-                        'risk_score': r.get('confidence', 0) if is_sus else 0,
-                        'details': json.dumps(r)
-                    })
-            except Exception:
-                pass
 
         if trip.get('entry_image_license') and trip.get('exit_image_license'):
             try:
@@ -373,11 +332,11 @@ def _execute_multi_detect(filter_rules: dict, trip_repo) -> dict:
     return {"multi_detect": True, "detected": detected, "suspected": suspected}
 
 
-# ---- 货车 OBU 监测（task_type='truck_obu_audit'）----
+# ---- 客车 OBU 监测（task_type='passenger_obu_audit'）----
 
 
-def _execute_truck_obu_audit(filter_rules: dict, task: dict, trip_repo) -> dict:
-    """非新A开头货车+OBU介质的纯元数据检测器。
+def _execute_passenger_obu_audit(filter_rules: dict, task: dict, trip_repo) -> dict:
+    """客车申报 + 非新A + 图片识别为货车 + LLM 复核通过 → 命中。
 
     调度语义:
       - 首次执行（last_run_at 为空）→ 扫描窗口 [start_time, NOW]
@@ -389,11 +348,11 @@ def _execute_truck_obu_audit(filter_rules: dict, task: dict, trip_repo) -> dict:
       - window_start / window_end: 实际扫描窗口
       - anomaly_count / anomaly_ids_sample: 命中的 audit_results.id 列表（前 50 个）
     """
-    from apps.api.services.truck_obu_metadata_detector import detect_trip, FRAUD_TYPE
+    from apps.api.services.passenger_obu_detector import detect_trip, FRAUD_TYPE
     from apps.api.database.repositories.audit_repository import AuditRepository
     from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
 
-    rules = _normalize_truck_obu_rules(filter_rules or {})
+    rules = _normalize_passenger_obu_rules(filter_rules or {})
     audit_repo = AuditRepository()
     stats_repo = TruckObuStatsRepository()
 
@@ -402,20 +361,19 @@ def _execute_truck_obu_audit(filter_rules: dict, task: dict, trip_repo) -> dict:
         start_dt = _parse_dt(last_run_at) - timedelta(minutes=5)
     else:
         start_dt = _parse_dt(rules['start_time'])
-    end_dt = datetime.now()
-    logger.info("Truck OBU audit window: %s ~ %s", start_dt, end_dt)
+    end_dt = datetime.now(_BEIJING_TZ).replace(tzinfo=None)
+    logger.info("Passenger OBU audit window: %s ~ %s", start_dt, end_dt)
 
     scanned = 0
     suspicious = 0
     new_anomaly_ids: List[int] = []
     offset = 0
     while scanned < rules['limit']:
-        rows = trip_repo.find_truck_obu_candidates(
-            vehicle_types=rules['vehicle_types'],
-            media_type=rules['media_type'],
-            plate_prefix_exclude=rules['plate_prefix_exclude'],
+        rows = trip_repo.find_passenger_obu_candidates(
             start_time=start_dt.strftime('%Y-%m-%d %H:%M:%S'),
             end_time=end_dt.strftime('%Y-%m-%d %H:%M:%S'),
+            plate_prefix_exclude=rules['plate_prefix_exclude'],
+            declared_vehicle_type=rules['declared_vehicle_type'],
             limit=rules['page_size'],
             offset=offset,
         )
@@ -438,8 +396,13 @@ def _execute_truck_obu_audit(filter_rules: dict, task: dict, trip_repo) -> dict:
                         'source_side': details['source_side'],
                         'entry_obu_id': details['entry_obu_id'],
                         'exit_obu_id': details['exit_obu_id'],
-                        'entry_media_type': details['entry_media_type'],
-                        'exit_media_type': details['exit_media_type'],
+                        'entry_media_type': details.get('entry_media_type'),
+                        'exit_media_type': details.get('exit_media_type'),
+                        'entry_visual_type': details['entry_visual_type'],
+                        'exit_visual_type': details['exit_visual_type'],
+                        'visual_vehicle_type': details['visual_vehicle_type'],
+                        'llm_verified': details['llm_verified'],
+                        'llm_confidence': details['llm_confidence'],
                         'rule_version': 'v1',
                     }, ensure_ascii=False),
                 })
@@ -464,7 +427,7 @@ def _execute_truck_obu_audit(filter_rules: dict, task: dict, trip_repo) -> dict:
     )
 
     return {
-        'task_type': 'truck_obu_audit',
+        'task_type': 'passenger_obu_audit',
         'window_start': start_dt.strftime('%Y-%m-%d %H:%M:%S'),
         'window_end': end_dt.strftime('%Y-%m-%d %H:%M:%S'),
         'scanned': scanned,
@@ -474,11 +437,10 @@ def _execute_truck_obu_audit(filter_rules: dict, task: dict, trip_repo) -> dict:
     }
 
 
-def _normalize_truck_obu_rules(filter_rules: dict) -> dict:
+def _normalize_passenger_obu_rules(filter_rules: dict) -> dict:
     return {
         'start_time': filter_rules.get('start_time', '2026-06-01 00:00:00'),
-        'vehicle_types': list(filter_rules.get('vehicle_types', [14, 15, 16])),
-        'media_type': int(filter_rules.get('media_type', 1)),
+        'declared_vehicle_type': int(filter_rules.get('declared_vehicle_type', 1)),
         'plate_prefix_exclude': filter_rules.get('plate_prefix_exclude', '新A'),
         'limit': int(filter_rules.get('limit', 2000)),
         'page_size': int(filter_rules.get('page_size', 500)),

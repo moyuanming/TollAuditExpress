@@ -57,11 +57,11 @@ class TestStatsAndTrips:
 
 
 class TestDetectEndpoints:
-    def test_detect_truck_obu_not_found(self, client):
-        resp = client.post('/api/audit/detect/truck-obu', json={'passid': 'NOEXIST'})
+    def test_detect_passenger_obu_not_found(self, client):
+        resp = client.post('/api/audit/detect/passenger-obu', json={'passid': 'NOEXIST'})
         assert resp.status_code == 404
 
-    def test_detect_truck_obu(self, client):
+    def test_detect_passenger_obu(self, client):
         from apps.api.database.repositories.trip_repository import TripRepository
         TripRepository().save_trip({
             'passid': 'DETECT001',
@@ -69,7 +69,7 @@ class TestDetectEndpoints:
             'entry_image_trans': 'http://fake/trans.jpg',
         })
 
-        resp = client.post('/api/audit/detect/truck-obu', json={'passid': 'DETECT001'})
+        resp = client.post('/api/audit/detect/passenger-obu', json={'passid': 'DETECT001'})
         assert resp.status_code == 200
         data = resp.json()
         assert 'is_suspicious' in data

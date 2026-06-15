@@ -26,13 +26,13 @@ class TestUpsertDailyStat:
     def test_insert_when_not_exists(self, repo):
         repo.upsert_daily_stat(
             date='2026-06-14',
-            fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=10,
             suspicious_count_delta=3,
             last_run_at='2026-06-14 12:00:00',
         )
 
-        stats = repo.get_daily_stats(fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A')
+        stats = repo.get_daily_stats(fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A')
         assert len(stats) == 1
         assert stats[0]['date'] == '2026-06-14'
         assert stats[0]['scanned_count'] == 10
@@ -42,17 +42,17 @@ class TestUpsertDailyStat:
     def test_upsert_accumulates_on_duplicate(self, repo):
         """ON CONFLICT 应累加计数,不是覆盖"""
         repo.upsert_daily_stat(
-            date='2026-06-14', fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            date='2026-06-14', fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=10, suspicious_count_delta=3,
             last_run_at='2026-06-14 12:00:00',
         )
         repo.upsert_daily_stat(
-            date='2026-06-14', fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            date='2026-06-14', fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=5, suspicious_count_delta=2,
             last_run_at='2026-06-14 13:00:00',
         )
 
-        stats = repo.get_daily_stats(fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A')
+        stats = repo.get_daily_stats(fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A')
         assert len(stats) == 1
         assert stats[0]['scanned_count'] == 15  # 10+5
         assert stats[0]['suspicious_count'] == 5  # 3+2
@@ -62,7 +62,7 @@ class TestUpsertDailyStat:
     def test_separate_fraud_types_not_merged(self, repo):
         """不同 fraud_type 是不同行,不应互相覆盖"""
         repo.upsert_daily_stat(
-            date='2026-06-14', fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            date='2026-06-14', fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=10, suspicious_count_delta=3,
             last_run_at='2026-06-14 12:00:00',
         )
@@ -72,7 +72,7 @@ class TestUpsertDailyStat:
             last_run_at='2026-06-14 12:30:00',
         )
 
-        a = repo.get_daily_stats(fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A')
+        a = repo.get_daily_stats(fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A')
         b = repo.get_daily_stats(fraud_type='OTHER_FRAUD')
         assert a[0]['scanned_count'] == 10
         assert b[0]['scanned_count'] == 20
@@ -87,25 +87,25 @@ class TestGetDailyStats:
     def test_filter_by_date_range(self, repo):
         for day in ('2026-06-12', '2026-06-13', '2026-06-14', '2026-06-15'):
             repo.upsert_daily_stat(
-                date=day, fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+                date=day, fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
                 scanned_count_delta=1, suspicious_count_delta=0,
                 last_run_at=f'{day} 12:00:00',
             )
 
         stats = repo.get_daily_stats(
             from_date='2026-06-13', to_date='2026-06-14',
-            fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
         )
         assert [s['date'] for s in stats] == ['2026-06-13', '2026-06-14']
 
     def test_no_filter_returns_all(self, repo):
         repo.upsert_daily_stat(
-            date='2026-06-12', fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            date='2026-06-12', fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=1, suspicious_count_delta=0,
             last_run_at='2026-06-12 12:00:00',
         )
         repo.upsert_daily_stat(
-            date='2026-06-14', fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            date='2026-06-14', fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=2, suspicious_count_delta=1,
             last_run_at='2026-06-14 12:00:00',
         )
@@ -118,7 +118,7 @@ class TestGetDailyStats:
 
     def test_filter_by_fraud_type(self, repo):
         repo.upsert_daily_stat(
-            date='2026-06-14', fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            date='2026-06-14', fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=10, suspicious_count_delta=3,
             last_run_at='2026-06-14 12:00:00',
         )
@@ -128,7 +128,7 @@ class TestGetDailyStats:
             last_run_at='2026-06-14 12:00:00',
         )
 
-        stats = repo.get_daily_stats(fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A')
+        stats = repo.get_daily_stats(fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A')
         assert len(stats) == 1
         assert stats[0]['scanned_count'] == 10
 
@@ -148,12 +148,12 @@ class TestGetOverview:
 
     def test_aggregates_across_days(self, repo):
         repo.upsert_daily_stat(
-            date='2026-06-13', fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            date='2026-06-13', fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=10, suspicious_count_delta=3,
             last_run_at='2026-06-13 23:00:00',
         )
         repo.upsert_daily_stat(
-            date='2026-06-14', fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+            date='2026-06-14', fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
             scanned_count_delta=20, suspicious_count_delta=7,
             last_run_at='2026-06-14 12:00:00',
         )

@@ -317,11 +317,11 @@ TripDetailResponse.model_rebuild()
 TripDetailResponse.model_rebuild()
 
 
-# ---- 货车 OBU 监测（TRUCK_USES_TRUCK_OBU_NON_NEW_A）----
+# ---- 客车 OBU 监测（PASSENGER_USES_TRUCK_OBU_NON_NEW_A）----
 
 
-class TruckObuDailyStat(BaseModel):
-    """货车 OBU 监测 — 每日统计条目"""
+class PassengerObuDailyStat(BaseModel):
+    """客车 OBU 监测 — 每日统计条目"""
     date: str                       # YYYY-MM-DD
     fraud_type: str
     scanned_count: int = 0
@@ -330,13 +330,13 @@ class TruckObuDailyStat(BaseModel):
     last_run_at: Optional[str] = None
 
 
-class TruckObuDailyStatListResponse(BaseModel):
-    stats: List[TruckObuDailyStat]
+class PassengerObuDailyStatListResponse(BaseModel):
+    stats: List[PassengerObuDailyStat]
     total: int
 
 
-class TruckObuAnomalyItem(BaseModel):
-    """货车 OBU 监测 — 异常条目（响应），含 source_side（ENTRY/EXIT/BOTH）"""
+class PassengerObuAnomalyItem(BaseModel):
+    """客车 OBU 监测 — 异常条目（响应），含 source_side（ENTRY/EXIT/BOTH）+ LLM 复核字段"""
     id: int
     audit_trip_id: int
     fraud_type: str
@@ -358,27 +358,32 @@ class TruckObuAnomalyItem(BaseModel):
     process_status: str = 'UNPROCESSED'
     details: Optional[str] = None
     source_side: Optional[str] = None
+    visual_vehicle_type: Optional[str] = None
+    llm_verified: Optional[bool] = None
+    llm_confidence: Optional[float] = None
+    entry_image_trans: Optional[str] = None
+    exit_image_trans: Optional[str] = None
     created_at: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 
-class TruckObuAnomalyListResponse(BaseModel):
-    anomalies: List[TruckObuAnomalyItem]
+class PassengerObuAnomalyListResponse(BaseModel):
+    anomalies: List[PassengerObuAnomalyItem]
     total: int
     limit: int
     offset: int
 
 
-class TruckObuOverviewResponse(BaseModel):
-    """货车 OBU 监测 — 顶部卡片：累计扫描 / 异常 / 待处理 / 已确认 + 最近 30 天趋势"""
+class PassengerObuOverviewResponse(BaseModel):
+    """客车 OBU 监测 — 顶部卡片：累计扫描 / 异常 / 待处理 / 已确认 + 最近 30 天趋势"""
     total_scanned: int = 0
     total_suspicious: int = 0
     total_pending: int = 0
     total_confirmed: int = 0
     last_run_at: Optional[str] = None
-    last_30_days: List[TruckObuDailyStat] = []
+    last_30_days: List[PassengerObuDailyStat] = []
 
 
 # ---- 公开落地页线索 (landing) ----

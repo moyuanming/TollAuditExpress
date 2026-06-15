@@ -185,7 +185,7 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
           {trip.audit_results.map((r, i) => (
             <div key={i} style={{ marginBottom: 12 }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginBottom: 4 }}>
-                {r.fraud_type === 'TRUCK_USES_PASSENGER_OBU' ? '🚛 货车套用OBU' : '🚗 出入口不一致'}
+                {r.fraud_type === 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A' ? '🚗 客车套用货车OBU' : r.fraud_type === 'TRUCK_USES_PASSENGER_OBU' ? '🚛 货车套用OBU' : '🚗 出入口不一致'}
                 {' · 风险 '}
                 {r.risk_score != null ? r.risk_score.toFixed(2) : '—'}
               </div>

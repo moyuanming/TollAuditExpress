@@ -6,12 +6,12 @@ const TASK_TYPES = {
   detect_only: '仅检测',
   multi_detect: '多维度检测',
   re_detect: '补检测',
-  truck_obu_audit: '🚛 货车OBU监测',
+  passenger_obu_audit: '🚗 客车OBU监测',
   llm_verify: '🧠 AI 二次复核'
 }
 
 const FRAUD_TYPE_LABEL = {
-  TRUCK_USES_PASSENGER_OBU: '🚛 货套OBU',
+  PASSENGER_USES_TRUCK_OBU_NON_NEW_A: '🚗 客套货OBU',
   TRUCK_AS_CAR: '🚛 货套客',
   ENTRY_EXIT_MISMATCH: '🚗 出入口',
   GATEWAY_ANOMALY: '🛣️ 门架异常',
@@ -22,7 +22,7 @@ const FRAUD_TYPE_LABEL = {
 }
 
 const FRAUD_TYPE_FILTER_OPTIONS = [
-  { value: 'TRUCK_USES_PASSENGER_OBU', label: '🚛 货套OBU' },
+  { value: 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A', label: '🚗 客套货OBU' },
   { value: 'TRUCK_AS_CAR', label: '🚛 货套客' },
   { value: 'ENTRY_EXIT_MISMATCH', label: '🚗 出入口' },
   { value: 'GATEWAY_ANOMALY', label: '🛣️ 门架异常' },
@@ -341,7 +341,7 @@ function TaskManager() {
                   <option value="detect_only">仅检测</option>
                   <option value="multi_detect">多维度检测（规则引擎+多 detector）</option>
                   <option value="re_detect">补检测</option>
-                  <option value="truck_obu_audit">🚛 货车OBU监测（纯元数据）</option>
+                  <option value="passenger_obu_audit">🚗 客车OBU监测（元数据+图片+LLM）</option>
                   <option value="llm_verify">🧠 AI 二次复核</option>
                 </select>
               </div>

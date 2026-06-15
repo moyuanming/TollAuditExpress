@@ -327,7 +327,7 @@ class TripRepository:
             exit_vis = None
             fp_sim = None
             for r in results:
-                if r['fraud_type'] == 'TRUCK_USES_PASSENGER_OBU':
+                if r['fraud_type'] == 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A':
                     entry_vis = r.get('entry_visual_type')
                 elif r['fraud_type'] == 'ENTRY_EXIT_MISMATCH':
                     entry_vis = r.get('entry_visual_type') or entry_vis
@@ -418,6 +418,62 @@ class TripRepository:
             start_time, end_time,
             *vehicle_types, media_type, f"{plate_prefix_exclude}%",
             *vehicle_types, media_type, f"{plate_prefix_exclude}%",
+            limit, offset,
+        ]
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return [dict(r) for r in cursor.fetchall()]
+
+    def find_passenger_obu_candidates(
+        self,
+        start_time: str,
+        end_time: str,
+        plate_prefix_exclude: str = '新A',
+        declared_vehicle_type: int = 1,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> List[Dict]:
+        """查询客车+非新A+任一侧有 image_trans 的候选 trip（带分页）。
+
+        命中后还会进一步走 vehicle-ai-service 复核 + LLM 验证(在 detector 层)。
+        这里只做 SQL 预筛,省一次模型调用。
+
+        注：专用查询,不走通用 _build_where,后者 vehicle_type 过滤只支持 {1, 2},
+        不支持形参化 declared_vehicle_type。
+        """
+        sql = f"""
+            SELECT id, passid, entry_time, exit_time,
+                   entry_vehicle_id, exit_vehicle_id,
+                   entry_vehicle_type, exit_vehicle_type,
+                   entry_media_type, exit_media_type,
+                   entry_obu_id, exit_obu_id,
+                   entry_image_trans, exit_image_trans,
+                   entry_visual_type, exit_visual_type
+            FROM audit_trips
+            WHERE entry_time >= %s AND entry_time < %s
+              AND (
+                   (entry_vehicle_type = %s
+                    AND entry_vehicle_id IS NOT NULL
+                    AND entry_vehicle_id NOT LIKE %s
+                    AND entry_image_trans IS NOT NULL
+                    AND entry_image_trans != ''
+                    AND entry_image_trans NOT LIKE '%None%')
+                OR (exit_vehicle_type = %s
+                    AND exit_vehicle_id IS NOT NULL
+                    AND exit_vehicle_id NOT LIKE %s
+                    AND exit_image_trans IS NOT NULL
+                    AND exit_image_trans != ''
+                    AND exit_image_trans NOT LIKE '%None%')
+              )
+            ORDER BY entry_time ASC
+            LIMIT %s OFFSET %s
+        """
+        prefix = f"{plate_prefix_exclude}%"
+        params = [
+            start_time, end_time,
+            declared_vehicle_type, prefix,
+            declared_vehicle_type, prefix,
             limit, offset,
         ]
         with get_connection() as conn:

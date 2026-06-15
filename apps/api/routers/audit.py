@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Query
 from fastapi.responses import StreamingResponse, Response
 from starlette.concurrency import run_in_threadpool
 import httpx
-from typing import Optional
+from typing import Optional, List
 import uuid
 import json
 
@@ -19,7 +19,6 @@ from apps.api.services.doris_trip_query import (
     SORTABLE_COLUMNS_DORIS,
     VEHICLE_ID_MATCH_MODES_DORIS,
 )
-from apps.api.services.truck_obu_detector import TruckOBUDetector
 from apps.api.services.entry_exit_matcher import EntryExitMatcher
 from apps.api.services.vehicle_comparator import compare_vehicles_by_passid
 from apps.api.core.vehicle_ai_client import get_client
@@ -32,19 +31,13 @@ from apps.api.models.schemas import (
     StatsResponse, AggregateRequest, ProcessRequest, DetectRequest,
     RawTripResponse, RawTripListResponse, RawTripDetailResponse,
     DetectEntryExitLLMRequest, LlmVehicleCompareResponse,
-    TruckObuOverviewResponse, TruckObuDailyStat, TruckObuDailyStatListResponse,
-    TruckObuAnomalyItem, TruckObuAnomalyListResponse,
+    PassengerObuOverviewResponse, PassengerObuDailyStat, PassengerObuDailyStatListResponse,
+    PassengerObuAnomalyItem, PassengerObuAnomalyListResponse,
 )
 
 logger = get_logger(__name__)
 
 router = APIRouter()
-
-
-def get_truck_detector(request: Request):
-    if request.app.state.truck_detector is None:
-        request.app.state.truck_detector = TruckOBUDetector()
-    return request.app.state.truck_detector
 
 
 def get_entry_exit_matcher(request: Request):
@@ -437,35 +430,49 @@ async def process_suspect(suspect_id: int, request: ProcessRequest):
     return {"message": "Processed successfully"}
 
 
-@router.post("/detect/truck-obu")
-async def detect_truck_obu(detect_req: DetectRequest, request: Request):
-    """检测货车套用客车OBU"""
+@router.post("/detect/passenger-obu")
+async def detect_passenger_obu(detect_req: DetectRequest):
+    """检测客车套用货车 OBU（入口或出口图片识别为货车 + LLM 复核通过）"""
     passid = detect_req.passid
     repo = TripRepository()
     trip = repo.get_trip_detail(passid)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    detector = get_truck_detector(request)
-    entry_record = {
-        'VEHICLETYPE': trip.get('entry_vehicle_type'),
-        'image_trans': trip.get('entry_image_trans')
+    from apps.api.services.passenger_obu_detector import detect_trip, FRAUD_TYPE
+
+    details = detect_trip(trip)
+    if not details:
+        return {"is_suspicious": False, "fraud_type": FRAUD_TYPE, "details": None}
+
+    audit_repo = AuditRepository()
+    audit_repo.save_result({
+        'audit_trip_id': trip['id'],
+        'fraud_type': FRAUD_TYPE,
+        'entry_vehicle_type': details.get('entry_vehicle_type'),
+        'exit_vehicle_type': details.get('exit_vehicle_type'),
+        'is_suspicious': 1,
+        'risk_score': details.get('risk_score', 0.85),
+        'details': json.dumps({
+            'source_side': details.get('source_side'),
+            'entry_obu_id': details.get('entry_obu_id'),
+            'exit_obu_id': details.get('exit_obu_id'),
+            'entry_media_type': details.get('entry_media_type'),
+            'exit_media_type': details.get('exit_media_type'),
+            'entry_visual_type': details.get('entry_visual_type'),
+            'exit_visual_type': details.get('exit_visual_type'),
+            'visual_vehicle_type': details.get('visual_vehicle_type'),
+            'llm_verified': details.get('llm_verified'),
+            'llm_confidence': details.get('llm_confidence'),
+            'rule_version': 'v1',
+        }, ensure_ascii=False),
+    })
+
+    return {
+        'is_suspicious': True,
+        'fraud_type': FRAUD_TYPE,
+        'details': details,
     }
-    result = detector.detect(entry_record)
-    
-    if result.get('is_suspicious'):
-        audit_repo = AuditRepository()
-        audit_repo.save_result({
-            'audit_trip_id': trip['id'],
-            'fraud_type': 'TRUCK_USES_PASSENGER_OBU',
-            'entry_vehicle_type': trip.get('entry_vehicle_type'),
-            'entry_visual_type': result.get('visual_vehicle_type'),
-            'is_suspicious': 1,
-            'risk_score': result.get('confidence', 0),
-            'details': json.dumps(result)
-        })
-    
-    return result
 
 
 @router.post("/detect/entry-exit")
@@ -574,28 +581,6 @@ async def re_detect_trips(request: Request, background_tasks: BackgroundTasks):
                 
             results_to_save = []
 
-            if trip.get('entry_vehicle_type') == 1 and trip.get('entry_image_trans'):
-                try:
-                    detector = get_truck_detector(request)
-                    entry_record = {
-                        'VEHICLETYPE': trip.get('entry_vehicle_type'),
-                        'image_trans': trip.get('entry_image_trans')
-                    }
-                    r = detector.detect(entry_record)
-                    if r.get('visual_vehicle_type'):
-                        is_sus = 1 if r.get('is_suspicious') else 0
-                        results_to_save.append({
-                            'audit_trip_id': trip_id,
-                            'fraud_type': 'TRUCK_USES_PASSENGER_OBU',
-                            'entry_vehicle_type': trip.get('entry_vehicle_type'),
-                            'entry_visual_type': r.get('visual_vehicle_type'),
-                            'is_suspicious': is_sus,
-                            'risk_score': r.get('confidence', 0) if is_sus else 0,
-                            'details': json.dumps(r)
-                        })
-                except Exception:
-                    pass
-
             if trip.get('entry_image_license') and trip.get('exit_image_license'):
                 try:
                     matcher = get_entry_exit_matcher(request)
@@ -680,11 +665,11 @@ async def image_proxy(url: str = Query(...)):
         raise HTTPException(status_code=502, detail=f"Fetch error: {str(e)}")
 
 
-# ---- 货车 OBU 监测（TRUCK_USES_TRUCK_OBU_NON_NEW_A）----
+# ---- 客车 OBU 监测（PASSENGER_USES_TRUCK_OBU_NON_NEW_A）----
 
 
-@router.get("/truck-obu/overview", response_model=TruckObuOverviewResponse)
-async def get_truck_obu_overview():
+@router.get("/passenger-obu/overview", response_model=PassengerObuOverviewResponse)
+async def get_passenger_obu_overview():
     """顶部卡片：累计扫描 / 异常 / 待处理 / 已确认 + 最近 30 天趋势"""
     from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
     from datetime import date, timedelta
@@ -692,33 +677,33 @@ async def get_truck_obu_overview():
     stats_repo = TruckObuStatsRepository()
     overview = stats_repo.get_overview()
     pending = AuditRepository().get_suspects_count(
-        fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+        fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
         process_status='UNPROCESSED',
     )
     overview['total_pending'] = pending
     overview['last_30_days'] = stats_repo.get_daily_stats(
         from_date=(date.today() - timedelta(days=29)).isoformat(),
         to_date=date.today().isoformat(),
-        fraud_type='TRUCK_USES_TRUCK_OBU_NON_NEW_A',
+        fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
     )
-    return TruckObuOverviewResponse(**overview)
+    return PassengerObuOverviewResponse(**overview)
 
 
-@router.get("/truck-obu/stats/daily", response_model=TruckObuDailyStatListResponse)
-async def get_truck_obu_daily_stats(
+@router.get("/passenger-obu/stats/daily", response_model=PassengerObuDailyStatListResponse)
+async def get_passenger_obu_daily_stats(
     from_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
     to_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
-    fraud_type: Optional[str] = Query(None, description="默认只取 TRUCK_USES_TRUCK_OBU_NON_NEW_A"),
+    fraud_type: Optional[str] = Query(None, description="默认只取 PASSENGER_USES_TRUCK_OBU_NON_NEW_A"),
 ):
     """每日统计（按 fraud_type 聚合）"""
     from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
 
     stats_repo = TruckObuStatsRepository()
     if fraud_type is None:
-        fraud_type = 'TRUCK_USES_TRUCK_OBU_NON_NEW_A'
+        fraud_type = 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A'
     stats = stats_repo.get_daily_stats(from_date=from_date, to_date=to_date, fraud_type=fraud_type)
     items = [
-        TruckObuDailyStat(
+        PassengerObuDailyStat(
             date=r['date'],
             fraud_type=r['fraud_type'],
             scanned_count=r['scanned_count'],
@@ -728,11 +713,11 @@ async def get_truck_obu_daily_stats(
         )
         for r in stats
     ]
-    return TruckObuDailyStatListResponse(stats=items, total=len(items))
+    return PassengerObuDailyStatListResponse(stats=items, total=len(items))
 
 
-@router.get("/truck-obu/anomalies", response_model=TruckObuAnomalyListResponse)
-async def get_truck_obu_anomalies(
+@router.get("/passenger-obu/anomalies", response_model=PassengerObuAnomalyListResponse)
+async def get_passenger_obu_anomalies(
     process_status: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
@@ -740,21 +725,26 @@ async def get_truck_obu_anomalies(
     """异常记录列表（复用 AuditRepository.get_suspects，仅过滤 fraud_types）"""
     audit_repo = AuditRepository()
     rows = audit_repo.get_suspects(
-        fraud_types=['TRUCK_USES_TRUCK_OBU_NON_NEW_A'],
+        fraud_types=['PASSENGER_USES_TRUCK_OBU_NON_NEW_A'],
         process_status=process_status,
         limit=limit, offset=offset,
     )
     total = audit_repo.get_suspects_count(
-        fraud_types=['TRUCK_USES_TRUCK_OBU_NON_NEW_A'],
+        fraud_types=['PASSENGER_USES_TRUCK_OBU_NON_NEW_A'],
         process_status=process_status,
     )
-    items: List[TruckObuAnomalyItem] = []
+    items: List[PassengerObuAnomalyItem] = []
     for r in rows:
         source_side = None
         entry_obu_id = None
         exit_obu_id = None
         entry_media_type = None
         exit_media_type = None
+        visual_vehicle_type = None
+        llm_verified = None
+        llm_confidence = None
+        entry_image_trans = None
+        exit_image_trans = None
         if r.get('details'):
             try:
                 d = json.loads(r['details']) if isinstance(r['details'], str) else r['details']
@@ -763,9 +753,14 @@ async def get_truck_obu_anomalies(
                 exit_obu_id = d.get('exit_obu_id')
                 entry_media_type = d.get('entry_media_type')
                 exit_media_type = d.get('exit_media_type')
+                visual_vehicle_type = d.get('visual_vehicle_type')
+                llm_verified = d.get('llm_verified')
+                llm_confidence = d.get('llm_confidence')
+                entry_image_trans = d.get('entry_image_trans')
+                exit_image_trans = d.get('exit_image_trans')
             except Exception:
                 pass
-        items.append(TruckObuAnomalyItem(
+        items.append(PassengerObuAnomalyItem(
             id=r['id'], audit_trip_id=r['audit_trip_id'],
             fraud_type=r['fraud_type'], passid=r.get('passid'),
             entry_time=r.get('entry_time'), exit_time=r.get('exit_time'),
@@ -783,7 +778,12 @@ async def get_truck_obu_anomalies(
             process_status=r.get('process_status', 'UNPROCESSED'),
             details=r.get('details'),
             source_side=source_side,
+            visual_vehicle_type=visual_vehicle_type,
+            llm_verified=llm_verified,
+            llm_confidence=llm_confidence,
+            entry_image_trans=entry_image_trans,
+            exit_image_trans=exit_image_trans,
             created_at=r.get('created_at'),
         ))
-    return TruckObuAnomalyListResponse(anomalies=items, total=total,
-                                       limit=limit, offset=offset)
+    return PassengerObuAnomalyListResponse(anomalies=items, total=total,
+                                           limit=limit, offset=offset)
