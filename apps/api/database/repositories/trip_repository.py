@@ -458,22 +458,23 @@ class TripRepository:
                     AND entry_vehicle_id NOT LIKE %s
                     AND entry_image_trans IS NOT NULL
                     AND entry_image_trans != ''
-                    AND entry_image_trans NOT LIKE '%None%')
+                    AND entry_image_trans NOT LIKE %s)
                 OR (exit_vehicle_type = %s
                     AND exit_vehicle_id IS NOT NULL
                     AND exit_vehicle_id NOT LIKE %s
                     AND exit_image_trans IS NOT NULL
                     AND exit_image_trans != ''
-                    AND exit_image_trans NOT LIKE '%None%')
+                    AND exit_image_trans NOT LIKE %s)
               )
             ORDER BY entry_time ASC
             LIMIT %s OFFSET %s
         """
         prefix = f"{plate_prefix_exclude}%"
+        none_pat = '%None%'
         params = [
             start_time, end_time,
-            declared_vehicle_type, prefix,
-            declared_vehicle_type, prefix,
+            declared_vehicle_type, prefix, none_pat,
+            declared_vehicle_type, prefix, none_pat,
             limit, offset,
         ]
         with get_connection() as conn:
