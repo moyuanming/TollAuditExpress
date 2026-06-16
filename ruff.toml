@@ -1,0 +1,28 @@
+# Ruff 配置 — TollAuditExpress 后端代码质量
+# https://docs.astral.sh/ruff/configuration/
+
+target-version = "py310"
+line-length = 120
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults (FastAPI Depends)
+]
+
+[lint.isort]
+known-first-party = ["apps", "tests"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

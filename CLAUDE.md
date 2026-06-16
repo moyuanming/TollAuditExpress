@@ -14,8 +14,69 @@
 - 如果任务会跨多个区域，先给出一个简短计划再动手。
 
 ## 常用命令
-- 这个部分应由项目维护者按实际工具链补齐。
-- 至少明确：依赖安装、本地开发、静态检查、测试、构建和数据迁移这几类命令。
+
+### 依赖安装
+```bash
+# 后端
+cd apps/api && pip install -r requirements.txt
+# 前端
+cd apps/web && npm install
+```
+
+### 本地开发
+```bash
+# 后端（热重载）
+cd apps/api && uvicorn main:app --reload --port 8000
+# 前端（热重载，默认 5173 端口）
+cd apps/web && npm run dev
+```
+
+### 静态检查
+```bash
+# 后端 — ruff (lint + format)
+ruff check apps/api/ tests/
+ruff format --check apps/api/ tests/
+# 前端 — ESLint（如已配置）
+cd apps/web && npx eslint src/
+```
+
+### 测试
+```bash
+# 后端单元 + 集成测试（pytest，覆盖率 ≥60%）
+pytest
+# 后端仅单元测试
+pytest tests/unit/
+# 后端仅 API 路由测试
+pytest tests/api/
+# 前端测试（vitest）
+cd apps/web && npm test
+# E2E 测试
+pytest tests/e2e/
+```
+
+### 构建
+```bash
+# 前端构建
+cd apps/web && npm run build
+# Docker 镜像构建
+docker-compose build
+# 或使用项目脚本
+bash build.sh
+```
+
+### 数据迁移
+```bash
+# SQLite → Doris 迁移
+cd apps/api && python -m database.migrate_sqlite_to_doris
+# 执行指定 DDL
+cd apps/api && python -m database.connection  # 自动跑 migrations/
+```
+
+### 部署
+```bash
+# 一键部署（经三机拓扑中转）
+bash deploy.sh
+```
 
 ## 架构边界
 - `apps/web` 只负责页面、组件、浏览器交互和前端状态编排。
