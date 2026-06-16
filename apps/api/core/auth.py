@@ -6,12 +6,12 @@ from fastapi import Request
 from starlette.responses import JSONResponse
 
 from apps.api.core.config import API_KEY, AUTH_ENABLED, AUTH_JWT_PUBLIC_KEY
-from apps.api.core.jwt_util import decode_and_validate, parse_payload_unsafe, JwtExpiredError, JwtInvalidError
+from apps.api.core.jwt_util import JwtExpiredError, JwtInvalidError, decode_and_validate, parse_payload_unsafe
 from apps.api.core.token_cache import token_cache
 
 logger = logging.getLogger(__name__)
 
-PUBLIC_PREFIXES = ("/health", "/docs", "/openapi.json", "/redoc", "/assets/")
+PUBLIC_PREFIXES = ("/api/health", "/docs", "/openapi.json", "/redoc", "/assets/")
 PUBLIC_EXACT = ("/", "")
 OAUTH_PREFIX = "/api/oauth"
 
@@ -49,6 +49,7 @@ async def _handle_jwt_auth(request, call_next, auth_header):
     # 定期向平台验证 token 是否仍有效（处理用户在平台端退出登录的场景）
     if not token_cache.is_verified(token):
         from apps.api.core.oauth_service import oauth_service
+
         try:
             await oauth_service.get_user_info(token)
             token_cache.mark_verified(token)
