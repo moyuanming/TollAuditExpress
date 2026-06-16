@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { auditApi } from '../api/audit'
 import VehicleTripDetail from '../components/VehicleTripDetail'
 import { formatTime } from '../components/tripDetailUtils'
@@ -17,7 +17,11 @@ const SOURCE_SIDE_BADGE = {
   BOTH: { className: 'badge badge-danger', label: '两侧' }
 }
 
-const POLL_INTERVAL_MS = 30_000
+const VEHICLE_TYPE_LABEL = { 1: '客车', 2: '货车', 14: '货车', 15: '货车', 16: '货车' }
+
+function declaredVehicleTypeLabel(t) {
+  return VEHICLE_TYPE_LABEL[t] || (t == null ? '—' : String(t))
+}
 
 function PassengerOBUMonitor() {
   const [overview, setOverview] = useState(null)
@@ -33,12 +37,10 @@ function PassengerOBUMonitor() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [actionOperator, setActionOperator] = useState('admin')
   const [actionComment, setActionComment] = useState('')
-  const pollTimerRef = useRef(null)
 
   useEffect(() => {
     loadAll()
-    pollTimerRef.current = setInterval(loadAll, POLL_INTERVAL_MS)
-    return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current) }
+    // 不做定时刷新 — 列表/详情数据需结合人工判定,定时刷新会打断操作并造成重复请求
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters])
 
@@ -237,13 +239,15 @@ function PassengerOBUMonitor() {
                   <th className="col-id">ID</th>
                   <th className="w-110">PASSID</th>
                   <th className="w-90">入口车辆</th>
+                  <th className="w-90">入口车型</th>
                   <th className="w-80">入口站</th>
                   <th className="col-time">入口时间</th>
                   <th className="w-90">出口车辆</th>
+                  <th className="w-90">出口车型</th>
                   <th className="w-80">出口站</th>
                   <th className="col-time">出口时间</th>
                   <th className="w-80">命中侧</th>
-                  <th className="w-80">视觉类型</th>
+                  <th className="w-90">视觉车型</th>
                   <th className="col-narrow">风险评分</th>
                   <th className="w-100px">LLM</th>
                   <th className="w-80">状态</th>
@@ -252,13 +256,13 @@ function PassengerOBUMonitor() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={13} className="text-center p-4">
+                    <td colSpan={15} className="text-center p-4">
                       <span className="loading-spinner"></span> 加载中...
                     </td>
                   </tr>
                 ) : anomalies.length === 0 ? (
                   <tr>
-                    <td colSpan={13}>
+                    <td colSpan={15}>
                       <div className="empty-state">
                         <div className="empty-state-icon"></div>
                         <div className="empty-state-title">暂无异常记录</div>
@@ -279,9 +283,11 @@ function PassengerOBUMonitor() {
                         <td><span className="mono">#{a.id}</span></td>
                         <td><span className="mono">{a.passid || '-'}</span></td>
                         <td><span className="font-medium">{a.entry_vehicle_id || '-'}</span></td>
+                        <td><span className="text-sm">{declaredVehicleTypeLabel(a.entry_vehicle_type)}</span></td>
                         <td><span className="text-sm">{a.entry_station_name || '-'}</span></td>
                         <td><span className="mono text-xs">{formatTime(a.entry_time)}</span></td>
                         <td><span className="font-medium">{a.exit_vehicle_id || '-'}</span></td>
+                        <td><span className="text-sm">{declaredVehicleTypeLabel(a.exit_vehicle_type)}</span></td>
                         <td><span className="text-sm">{a.exit_station_name || '-'}</span></td>
                         <td><span className="mono text-xs">{formatTime(a.exit_time)}</span></td>
                         <td><span className={side.className}>{side.label}</span></td>

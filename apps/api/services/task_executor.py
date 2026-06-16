@@ -445,7 +445,6 @@ def _execute_passenger_obu_audit(filter_rules: dict, task: dict, trip_repo) -> d
                             'visual_vehicle_type': details['visual_vehicle_type'],
                             'llm_verified': details['llm_verified'],
                             'llm_confidence': details['llm_confidence'],
-                            'llm_reason': details.get('llm_reason'),
                             'rule_version': 'v1',
                         }, ensure_ascii=False),
                     })

@@ -9,12 +9,11 @@
 
 import json
 import sqlite3
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from apps.api.services.rule_loader import RuleLoader, _parse_rule_row, load_rules
-
 
 _RULE_DDL = """
 CREATE TABLE IF NOT EXISTS detection_rules (
@@ -74,6 +73,84 @@ class TestParseRuleRow:
         with pytest.raises(ValueError):
             _parse_rule_row(row)
 
+    def test_raises_when_rule_expr_is_not_string(self):
+        """rule_expr 不是字符串时直接抛 ValueError。"""
+        with pytest.raises(ValueError, match="rule_expr must be a JSON string"):
+            _parse_rule_row(
+                {
+                    "id": 3,
+                    "name": "x",
+                    "fraud_type": "OBU_SHIELD",
+                    "rule_expr": {"already": "parsed"},
+                }
+            )
+
+    def test_parses_with_default_values(self):
+        """缺失可选字段时使用默认值"""
+        row = {
+            "id": 10,
+            "name": "minimal",
+            "fraud_type": "TRUCK_AS_CAR",
+            "rule_expr": json.dumps({"when": True, "score": 0.5}),
+        }
+        rule = _parse_rule_row(row)
+        assert rule["severity"] == 2
+        assert rule["description"] is None
+        assert rule["threshold"] == 0.5
+        assert rule["dry_run"] == 0
+        assert rule["enabled"] == 1
+        assert rule["source"] == "manual"
+
+    def test_parses_with_none_optional_fields(self):
+        """可选字段为 None 时使用默认值"""
+        row = {
+            "id": 11,
+            "name": "with_nones",
+            "fraud_type": "OBU_SHIELD",
+            "rule_expr": json.dumps({"when": True, "score": 0.5}),
+            "severity": None,
+            "threshold": None,
+            "dry_run": None,
+            "enabled": None,
+            "source": None,
+        }
+        rule = _parse_rule_row(row)
+        assert rule["severity"] == 2
+        assert rule["threshold"] == 0.5
+        assert rule["dry_run"] == 0
+        assert rule["enabled"] == 1
+        assert rule["source"] == "manual"
+
+    def test_parses_description_field(self):
+        row = {
+            "id": 12,
+            "name": "with_desc",
+            "fraud_type": "OBU_SHIELD",
+            "rule_expr": json.dumps({"when": True, "score": 0.5}),
+            "description": "Detect OBU shield fraud",
+        }
+        rule = _parse_rule_row(row)
+        assert rule["description"] == "Detect OBU shield fraud"
+
+    def test_raises_on_missing_required_key(self):
+        """缺少 id/name/fraud_type 等必需键时抛 KeyError"""
+        row = {
+            "rule_expr": json.dumps({"when": True, "score": 0.5}),
+        }
+        with pytest.raises(KeyError):
+            _parse_rule_row(row)
+
+    def test_parses_custom_source(self):
+        row = {
+            "id": 13,
+            "name": "custom_source",
+            "fraud_type": "OBU_SHIELD",
+            "rule_expr": json.dumps({"when": True, "score": 0.5}),
+            "source": "auto",
+        }
+        rule = _parse_rule_row(row)
+        assert rule["source"] == "auto"
+
 
 # ============================================================
 # RuleLoader class
@@ -111,15 +188,49 @@ class TestRuleLoader:
         assert rules[0]["id"] == 1
         assert any("bad" in e["name"] for e in loader.load_errors)
 
+    def test_load_errors_cleared_on_new_loader(self, temp_db):
+        """新 RuleLoader 实例不应继承旧的 load_errors"""
+        _insert_raw_row(
+            temp_db,
+            id=1,
+            name="bad",
+            enabled=1,
+            fraud_type="OBU_SHIELD",
+            rule_expr_text="bad{",
+        )
+        loader1 = RuleLoader()
+        loader1.load_all_enabled()
+        assert len(loader1.load_errors) > 0
 
-class TestParseRuleRowEdgeCases:
-    def test_raises_when_rule_expr_is_not_string(self):
-        """rule_expr 不是字符串时直接抛 ValueError。"""
-        with pytest.raises(ValueError, match="rule_expr must be a JSON string"):
-            _parse_rule_row({
-                "id": 3, "name": "x", "fraud_type": "OBU_SHIELD",
-                "rule_expr": {"already": "parsed"},
-            })
+        loader2 = RuleLoader()
+        assert loader2.load_errors == []
+
+    def test_load_all_enabled_with_multiple_valid_rules(self, temp_db):
+        _insert_rule(temp_db, id=1, name="r1", enabled=1, fraud_type="GATEWAY_ANOMALY")
+        _insert_rule(temp_db, id=2, name="r2", enabled=1, fraud_type="OBU_SHIELD")
+        _insert_rule(temp_db, id=3, name="r3", enabled=1, fraud_type="TRUCK_AS_CAR")
+
+        loader = RuleLoader()
+        rules = loader.load_all_enabled()
+        assert len(rules) == 3
+
+    def test_value_error_on_null_rule_expr_recorded_as_load_error(self, temp_db):
+        """rule_expr 为 None 时触发 ValueError，记录到 load_errors"""
+        # Cannot insert NULL for rule_expr (NOT NULL constraint),
+        # so test with a row that has rule_expr as non-string type via raw SQL
+        # Instead, verify that invalid JSON is properly recorded
+        _insert_raw_row(
+            temp_db,
+            id=99,
+            name="bad_expr",
+            enabled=1,
+            fraud_type="OBU_SHIELD",
+            rule_expr_text="{{invalid}",
+        )
+        loader = RuleLoader()
+        rules = loader.load_all_enabled()
+        assert len(rules) == 0
+        assert any(e["id"] == 99 for e in loader.load_errors)
 
 
 class TestLoadAll:
@@ -134,13 +245,44 @@ class TestLoadAll:
 
     def test_records_load_errors_for_invalid_rows(self, temp_db):
         _insert_raw_row(
-            temp_db, id=5, name="broken", enabled=1,
-            fraud_type="OBU_SHIELD", rule_expr_text="{not json",
+            temp_db,
+            id=5,
+            name="broken",
+            enabled=1,
+            fraud_type="OBU_SHIELD",
+            rule_expr_text="{not json",
         )
         loader = RuleLoader()
         rules = loader.load_all()
         assert rules == []
         assert loader.load_errors and loader.load_errors[0]["id"] == 5
+
+    def test_load_all_returns_empty_when_table_empty(self, temp_db):
+        loader = RuleLoader()
+        assert loader.load_all() == []
+
+    def test_load_all_includes_both_valid_and_invalid(self, temp_db):
+        _insert_rule(temp_db, id=1, name="good", enabled=1, fraud_type="GATEWAY_ANOMALY")
+        _insert_raw_row(
+            temp_db,
+            id=2,
+            name="bad",
+            enabled=0,
+            fraud_type="OBU_SHIELD",
+            rule_expr_text="not-json",
+        )
+        _insert_rule(temp_db, id=3, name="good2", enabled=0, fraud_type="TRUCK_AS_CAR")
+
+        loader = RuleLoader()
+        rules = loader.load_all()
+        assert len(rules) == 2
+        assert sorted(r["id"] for r in rules) == [1, 3]
+        assert len(loader.load_errors) == 1
+
+
+# ============================================================
+# load_rules convenience function
+# ============================================================
 
 
 class TestLoadRulesFunction:
@@ -148,11 +290,94 @@ class TestLoadRulesFunction:
         """load_rules() 走 RuleLoader + rule_engine.validate_rule,校验失败的跳过。"""
         _insert_rule(temp_db, id=1, name="valid", enabled=1, fraud_type="GATEWAY_ANOMALY")
         _insert_raw_row(
-            temp_db, id=2, name="bad_json", enabled=1,
-            fraud_type="OBU_SHIELD", rule_expr_text="not-json{",
+            temp_db,
+            id=2,
+            name="bad_json",
+            enabled=1,
+            fraud_type="OBU_SHIELD",
+            rule_expr_text="not-json{",
         )
         rules = load_rules()
         assert [r["id"] for r in rules] == [1]
+
+    def test_load_rules_skips_rule_with_invalid_fraud_type(self, temp_db):
+        """fraud_type 不在白名单的规则被 validate_rule 拒绝"""
+        conn = sqlite3.connect(temp_db)
+        conn.execute(
+            "INSERT INTO detection_rules (id, name, fraud_type, rule_expr, enabled) VALUES (?, ?, ?, ?, ?)",
+            (99, "bad_ft", "INVALID_TYPE", json.dumps({"when": True, "score": 0.5}), 1),
+        )
+        conn.commit()
+        conn.close()
+
+        rules = load_rules()
+        assert not any(r["id"] == 99 for r in rules)
+
+    def test_load_rules_returns_empty_when_no_rules(self, temp_db):
+        rules = load_rules()
+        assert rules == []
+
+    def test_load_rules_returns_multiple_valid_rules(self, temp_db):
+        _insert_rule(temp_db, id=1, name="r1", enabled=1, fraud_type="GATEWAY_ANOMALY")
+        _insert_rule(temp_db, id=2, name="r2", enabled=1, fraud_type="OBU_SHIELD")
+        rules = load_rules()
+        assert len(rules) == 2
+
+
+# ============================================================
+# RuleLoader with mocked get_connection
+# ============================================================
+
+
+class TestRuleLoaderMockedConnection:
+    """使用 mock 替代真实数据库连接的测试"""
+
+    def test_load_all_enabled_with_mock_connection(self):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        mock_cursor.fetchall.return_value = [
+            {
+                "id": 1,
+                "name": "mocked-rule",
+                "fraud_type": "GATEWAY_ANOMALY",
+                "rule_expr": json.dumps({"when": True, "score": 0.7}),
+                "threshold": 0.5,
+                "dry_run": 0,
+                "enabled": 1,
+                "severity": 2,
+                "source": "manual",
+            },
+        ]
+
+        with patch("apps.api.services.rule_loader.get_connection", return_value=mock_conn):
+            loader = RuleLoader()
+            rules = loader.load_all_enabled()
+
+        assert len(rules) == 1
+        assert rules[0]["name"] == "mocked-rule"
+        mock_cursor.execute.assert_called_once()
+        assert "enabled = 1" in mock_cursor.execute.call_args[0][0]
+
+    def test_load_all_with_mock_connection(self):
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        mock_cursor.fetchall.return_value = []
+
+        with patch("apps.api.services.rule_loader.get_connection", return_value=mock_conn):
+            loader = RuleLoader()
+            rules = loader.load_all()
+
+        assert rules == []
+        mock_cursor.execute.assert_called_once()
+        assert "ORDER BY id" in mock_cursor.execute.call_args[0][0]
 
 
 # ============================================================

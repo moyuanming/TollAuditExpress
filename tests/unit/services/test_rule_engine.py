@@ -11,15 +11,23 @@ DSL 设计：JSON s-expression 表达式
 import pytest
 
 from apps.api.services.rule_engine import (
+    _FORBIDDEN_TOKENS,
     RuleEngine,
     RuleExprError,
     RuleValidationError,
+    _check_expr_shape,
+    _eval_arithmetic,
+    _eval_comparison,
+    _eval_count,
+    _eval_if,
+    _eval_in,
+    _eval_value,
+    _resolve_field,
     evaluate_condition,
     evaluate_rule,
     evaluate_score,
     validate_rule,
 )
-
 
 # ============================================================
 # validate_rule
@@ -83,6 +91,175 @@ class TestValidateRule:
                 "rule_expr": json_when_score(),
             }
             validate_rule(rule)
+
+    def test_rejects_threshold_below_zero(self):
+        with pytest.raises(RuleValidationError):
+            validate_rule(
+                {
+                    "id": 1,
+                    "name": "t",
+                    "fraud_type": "GATEWAY_ANOMALY",
+                    "rule_expr": json_when_score(),
+                    "threshold": -0.1,
+                }
+            )
+
+    def test_rejects_threshold_not_numeric(self):
+        with pytest.raises(RuleValidationError):
+            validate_rule(
+                {
+                    "id": 1,
+                    "name": "t",
+                    "fraud_type": "GATEWAY_ANOMALY",
+                    "rule_expr": json_when_score(),
+                    "threshold": "high",
+                }
+            )
+
+    def test_accepts_rule_with_only_when(self):
+        rule = {
+            "id": 1,
+            "name": "t",
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": {"when": True},
+        }
+        validate_rule(rule)
+
+    def test_accepts_rule_with_only_score(self):
+        rule = {
+            "id": 1,
+            "name": "t",
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": {"score": 0.5},
+        }
+        validate_rule(rule)
+
+    def test_rejects_rule_expr_with_forbidden_token_in_when(self):
+        rule = {
+            "id": 1,
+            "name": "t",
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": {"when": ["eval", "$trip.x"]},
+        }
+        with pytest.raises(RuleExprError):
+            validate_rule(rule)
+
+    def test_rejects_rule_expr_with_unknown_operator_in_score(self):
+        rule = {
+            "id": 1,
+            "name": "t",
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": {"score": ["unknown_op", 1, 2]},
+        }
+        with pytest.raises(RuleExprError):
+            validate_rule(rule)
+
+    def test_accepts_threshold_at_zero(self):
+        rule = {
+            "id": 1,
+            "name": "t",
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": json_when_score(),
+            "threshold": 0.0,
+        }
+        validate_rule(rule)
+
+    def test_accepts_threshold_at_one(self):
+        rule = {
+            "id": 1,
+            "name": "t",
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": json_when_score(),
+            "threshold": 1.0,
+        }
+        validate_rule(rule)
+
+
+# ============================================================
+# _check_expr_shape
+# ============================================================
+
+
+class TestCheckExprShape:
+    """表达式结构静态检查"""
+
+    def test_accepts_bool_literal(self):
+        _check_expr_shape(True, "when")
+
+    def test_accepts_numeric_literal(self):
+        _check_expr_shape(42, "score")
+        _check_expr_shape(3.14, "score")
+
+    def test_accepts_string_literal(self):
+        _check_expr_shape("hello", "when")
+
+    def test_accepts_trip_field_ref(self):
+        _check_expr_shape("$trip.foo", "when")
+        _check_expr_shape("$trip", "when")
+
+    def test_rejects_empty_list(self):
+        with pytest.raises(RuleExprError, match="empty expression"):
+            _check_expr_shape([], "when")
+
+    def test_rejects_non_string_operator(self):
+        with pytest.raises(RuleExprError, match="operator must be str"):
+            _check_expr_shape([123, 1, 2], "when")
+
+    def test_rejects_forbidden_token(self):
+        for tok in _FORBIDDEN_TOKENS:
+            with pytest.raises(RuleExprError, match="forbidden token"):
+                _check_expr_shape([tok, "$trip.x"], "when")
+
+    def test_rejects_unknown_operator(self):
+        with pytest.raises(RuleExprError, match="unknown operator"):
+            _check_expr_shape(["xyz", 1, 2], "when")
+
+    def test_rejects_unsupported_node_type(self):
+        with pytest.raises(RuleExprError, match="unsupported expression node"):
+            _check_expr_shape(set(), "when")
+
+    def test_recursively_checks_children(self):
+        # nested: ["and", ["eq", 1, 2], ["gt", 3, 4]] — valid
+        _check_expr_shape(["and", ["eq", 1, 2], ["gt", 3, 4]], "when")
+        # nested with bad child
+        with pytest.raises(RuleExprError):
+            _check_expr_shape(["and", ["unknown", 1], ["gt", 3, 4]], "when")
+
+
+# ============================================================
+# _resolve_field
+# ============================================================
+
+
+class TestResolveField:
+    """字段路径解析"""
+
+    def test_resolves_simple_field(self):
+        assert _resolve_field("$trip.x", {"x": 42}) == 42
+
+    def test_resolves_nested_field(self):
+        assert _resolve_field("$trip.a.b", {"a": {"b": 99}}) == 99
+
+    def test_returns_none_for_missing_field(self):
+        assert _resolve_field("$trip.missing", {"x": 1}) is None
+
+    def test_returns_none_for_nested_missing(self):
+        assert _resolve_field("$trip.a.b", {"a": {}}) is None
+
+    def test_raises_on_non_trip_prefix(self):
+        with pytest.raises(RuleExprError, match="must start with"):
+            _resolve_field("$other.x", {"x": 1})
+
+    def test_raises_on_bare_dollar_trip(self):
+        with pytest.raises(RuleExprError, match="invalid field path"):
+            _resolve_field("$trip", {"x": 1})
+
+    def test_raises_on_non_string_path(self):
+        with pytest.raises(RuleExprError, match="must start with"):
+            _resolve_field(123, {"x": 1})
+
+    def test_returns_none_when_intermediate_is_not_dict(self):
+        assert _resolve_field("$trip.a.b", {"a": 42}) is None
 
 
 # ============================================================
@@ -177,6 +354,134 @@ class TestEvaluateCondition:
         assert evaluate_condition(["gt", ["count", "$trip.records"], 3], trip) is True
         assert evaluate_condition(["lt", ["count", "$trip.records"], 3], trip) is False
 
+    def test_not_raises_on_wrong_arg_count(self):
+        with pytest.raises(RuleExprError, match="not takes exactly 1 argument"):
+            evaluate_condition(["not", True, True], {})
+
+    def test_comparison_raises_on_wrong_arg_count(self):
+        with pytest.raises(RuleExprError, match="eq takes exactly 2 arguments"):
+            evaluate_condition(["eq", 1], {})
+
+    def test_in_raises_on_wrong_arg_count(self):
+        with pytest.raises(RuleExprError, match="in takes exactly 2 arguments"):
+            evaluate_condition(["in", 1], {})
+
+    def test_count_raises_on_wrong_arg_count(self):
+        with pytest.raises(RuleExprError, match="count takes exactly 1 argument"):
+            evaluate_condition(["count", "$trip.a", "$trip.b"], {"a": [], "b": []})
+
+    def test_numeric_literal_truthy(self):
+        assert evaluate_condition(1, {}) is True
+        assert evaluate_condition(0, {}) is False
+
+    def test_string_literal_truthy(self):
+        assert evaluate_condition("hello", {}) is True
+        assert evaluate_condition("", {}) is False
+
+    def test_trip_field_truthy(self):
+        assert evaluate_condition("$trip.x", {"x": "yes"}) is True
+        assert evaluate_condition("$trip.x", {"x": ""}) is False
+
+    def test_invalid_expression_raises(self):
+        with pytest.raises(RuleExprError):
+            evaluate_condition(set(), {})
+
+    def test_ne_with_none_returns_true(self):
+        trip = {"x": None}
+        assert evaluate_condition(["ne", "$trip.x", 5], trip) is True
+
+    def test_gte_and_lte_boundary(self):
+        trip = {"x": 5}
+        assert evaluate_condition(["gte", "$trip.x", 5], trip) is True
+        assert evaluate_condition(["lte", "$trip.x", 5], trip) is True
+        assert evaluate_condition(["gte", "$trip.x", 6], trip) is False
+        assert evaluate_condition(["lte", "$trip.x", 4], trip) is False
+
+
+# ============================================================
+# _eval_comparison
+# ============================================================
+
+
+class TestEvalComparison:
+    """比较运算底层函数"""
+
+    def test_eq_both_none_returns_true(self):
+        assert _eval_comparison("eq", [None, None], {}) is True
+
+    def test_ne_one_none_returns_true(self):
+        assert _eval_comparison("ne", [None, 5], {}) is True
+        assert _eval_comparison("ne", [5, None], {}) is True
+
+    def test_eq_one_none_returns_false(self):
+        assert _eval_comparison("eq", [None, 5], {}) is False
+        assert _eval_comparison("eq", [5, None], {}) is False
+
+    def test_comparison_type_error_raises(self):
+        with pytest.raises(RuleExprError, match="comparison failed"):
+            _eval_comparison("gt", ["string", 5], {})
+
+    def test_all_comparison_ops(self):
+        assert _eval_comparison("eq", [5, 5], {}) is True
+        assert _eval_comparison("ne", [5, 3], {}) is True
+        assert _eval_comparison("gt", [5, 3], {}) is True
+        assert _eval_comparison("lt", [3, 5], {}) is True
+        assert _eval_comparison("gte", [5, 5], {}) is True
+        assert _eval_comparison("lte", [5, 5], {}) is True
+
+
+# ============================================================
+# _eval_in
+# ============================================================
+
+
+class TestEvalIn:
+    """in 运算底层函数"""
+
+    def test_in_with_list_haystack(self):
+        assert _eval_in(["blue", ["blue", "red"]], {}) is True
+
+    def test_not_in_list(self):
+        assert _eval_in(["green", ["blue", "red"]], {}) is False
+
+    def test_in_with_none_haystack_returns_false(self):
+        assert _eval_in([1, None], {}) is False
+
+    def test_in_with_none_needle_in_list(self):
+        assert _eval_in([None, [1, None, 3]], {}) is True
+
+    def test_in_with_non_iterable_haystack_returns_false(self):
+        # needle=5, haystack=5 (scalar), 5 in 5 → TypeError → False
+        assert _eval_in([5, 5], {}) is False
+
+    def test_in_type_error_returns_false(self):
+        assert _eval_in([42, "not_iterable"], {}) is False
+
+
+# ============================================================
+# _eval_count
+# ============================================================
+
+
+class TestEvalCount:
+    """count 运算底层函数"""
+
+    def test_count_list(self):
+        assert _eval_count(["$trip.items"], {"items": [1, 2, 3]}) == 3
+
+    def test_count_dict(self):
+        assert _eval_count(["$trip.items"], {"items": {"a": 1, "b": 2}}) == 2
+
+    def test_count_string(self):
+        assert _eval_count(["$trip.items"], {"items": "hello"}) == 5
+
+    def test_count_none_returns_zero(self):
+        assert _eval_count(["$trip.items"], {"items": None}) == 0
+
+    def test_count_non_collection_raises(self):
+        with pytest.raises(RuleExprError, match="count requires collection"):
+            _eval_count(["$trip.items"], {"items": 42})
+
 
 # ============================================================
 # evaluate_score
@@ -225,6 +530,143 @@ class TestEvaluateScore:
             "rule_expr": {"when": True, "score": ["mul", "$trip.x", -1]},
         }
         assert evaluate_rule(rule_under, trip)["risk_score"] == 0.0
+
+    def test_sub_expression(self):
+        trip = {"a": 0.9, "b": 0.3}
+        assert evaluate_score(["sub", "$trip.a", "$trip.b"], trip) == pytest.approx(0.6)
+
+    def test_div_expression(self):
+        trip = {"a": 0.6, "b": 2}
+        assert evaluate_score(["div", "$trip.a", "$trip.b"], trip) == pytest.approx(0.3)
+
+    def test_div_by_zero_raises(self):
+        with pytest.raises(RuleExprError, match="division by zero"):
+            evaluate_score(["div", 1, 0], {})
+
+    def test_score_from_none_field_returns_zero(self):
+        assert evaluate_score("$trip.missing", {}) == 0.0
+
+    def test_score_non_numeric_raises(self):
+        with pytest.raises(RuleExprError, match="score must be numeric"):
+            evaluate_score("not_a_number", {})
+
+    def test_if_expression_in_score(self):
+        trip = {"flag": True}
+        # if flag then 0.9 else 0.1
+        assert evaluate_score(["if", "$trip.flag", 0.9, 0.1], trip) == pytest.approx(0.9)
+
+    def test_if_expression_false_branch(self):
+        trip = {"flag": False}
+        assert evaluate_score(["if", "$trip.flag", 0.9, 0.1], trip) == pytest.approx(0.1)
+
+
+# ============================================================
+# _eval_arithmetic
+# ============================================================
+
+
+class TestEvalArithmetic:
+    """算术运算底层函数"""
+
+    def test_add_multiple_args(self):
+        assert _eval_arithmetic("add", [1, 2, 3], {}) == 6.0
+
+    def test_sub_multiple_args(self):
+        assert _eval_arithmetic("sub", [10, 3, 2], {}) == 5.0
+
+    def test_mul_multiple_args(self):
+        assert _eval_arithmetic("mul", [2, 3, 4], {}) == 24.0
+
+    def test_div_multiple_args(self):
+        assert _eval_arithmetic("div", [24, 2, 3], {}) == 4.0
+
+    def test_arithmetic_with_none_treated_as_zero(self):
+        assert _eval_arithmetic("add", [None, 5], {}) == 5.0
+        assert _eval_arithmetic("mul", [None, 5], {}) == 0.0
+
+    def test_arithmetic_too_few_args_raises(self):
+        with pytest.raises(RuleExprError, match="takes at least 2 arguments"):
+            _eval_arithmetic("add", [1], {})
+
+    def test_div_by_zero_raises(self):
+        with pytest.raises(RuleExprError, match="division by zero"):
+            _eval_arithmetic("div", [1, 0], {})
+
+
+# ============================================================
+# _eval_if
+# ============================================================
+
+
+class TestEvalIf:
+    """if 条件表达式底层函数"""
+
+    def test_if_true_branch(self):
+        assert _eval_if([True, 1, 2], {}) == 1
+
+    def test_if_false_branch(self):
+        assert _eval_if([False, 1, 2], {}) == 2
+
+    def test_if_wrong_arg_count_raises(self):
+        with pytest.raises(RuleExprError, match="if takes exactly 3 arguments"):
+            _eval_if([True, 1], {})
+
+    def test_if_with_comparison_condition(self):
+        assert _eval_if([["gt", 5, 3], "yes", "no"], {}) == "yes"
+        assert _eval_if([["lt", 5, 3], "yes", "no"], {}) == "no"
+
+
+# ============================================================
+# _eval_value
+# ============================================================
+
+
+class TestEvalValue:
+    """通用值求值"""
+
+    def test_bool_literal(self):
+        assert _eval_value(True, {}) is True
+        assert _eval_value(False, {}) is False
+
+    def test_numeric_literal(self):
+        assert _eval_value(42, {}) == 42
+        assert _eval_value(3.14, {}) == 3.14
+
+    def test_string_literal(self):
+        assert _eval_value("hello", {}) == "hello"
+
+    def test_none_literal(self):
+        assert _eval_value(None, {}) is None
+
+    def test_trip_field_access(self):
+        assert _eval_value("$trip.x", {"x": 42}) == 42
+
+    def test_literal_array(self):
+        # First element is not a known operator → literal array
+        result = _eval_value([1, 2, 3], {})
+        assert result == [1, 2, 3]
+
+    def test_empty_list_returns_empty_list(self):
+        assert _eval_value([], {}) == []
+
+    def test_literal_array_with_non_op_string_head(self):
+        # Non-operator string heads are treated as literal arrays, not expressions
+        result = _eval_value(["some_string", 1, 2], {})
+        assert result == ["some_string", 1, 2]
+
+    def test_invalid_node_raises(self):
+        with pytest.raises(RuleExprError, match="invalid expression"):
+            _eval_value(set(), {})
+
+    def test_comparison_returns_bool(self):
+        assert _eval_value(["eq", 5, 5], {}) is True
+        assert _eval_value(["ne", 5, 3], {}) is True
+
+    def test_in_returns_bool(self):
+        assert _eval_value(["in", "blue", ["blue", "red"]], {}) is True
+
+    def test_count_returns_int(self):
+        assert _eval_value(["count", "$trip.items"], {"items": [1, 2, 3]}) == 3
 
 
 # ============================================================
@@ -295,6 +737,63 @@ class TestEvaluateRule:
         result = evaluate_rule(rule, trip)
         assert result["is_suspicious"] == 0
         assert result["dry_run"] == 1
+
+    def test_default_threshold_is_0_5(self):
+        rule = {
+            "id": 10,
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": {"when": True, "score": 0.6},
+        }
+        result = evaluate_rule(rule, {})
+        assert result["is_suspicious"] == 1
+        assert result["details"]["threshold"] == 0.5
+
+    def test_score_exactly_at_threshold_is_suspicious(self):
+        rule = {
+            "id": 11,
+            "fraud_type": "GATEWAY_ANOMALY",
+            "threshold": 0.5,
+            "rule_expr": {"when": True, "score": 0.5},
+        }
+        result = evaluate_rule(rule, {})
+        assert result["is_suspicious"] == 1
+
+    def test_clamp_score_above_1(self):
+        rule = {
+            "id": 12,
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": {"when": True, "score": 5.0},
+        }
+        result = evaluate_rule(rule, {})
+        assert result["risk_score"] == 1.0
+
+    def test_clamp_score_below_0(self):
+        rule = {
+            "id": 13,
+            "fraud_type": "GATEWAY_ANOMALY",
+            "rule_expr": {"when": True, "score": -2.0},
+        }
+        result = evaluate_rule(rule, {})
+        assert result["risk_score"] == 0.0
+
+    def test_result_includes_details(self):
+        rule = {
+            "id": 14,
+            "name": "my-rule",
+            "fraud_type": "GATEWAY_ANOMALY",
+            "threshold": 0.7,
+            "rule_expr": {"when": True, "score": 0.8},
+        }
+        result = evaluate_rule(rule, {})
+        assert result["details"]["rule_name"] == "my-rule"
+        assert result["details"]["threshold"] == 0.7
+
+    def test_rule_with_no_rule_expr_returns_none(self):
+        rule = {"id": 15, "fraud_type": "GATEWAY_ANOMALY"}
+        # rule_expr is None → when defaults to True, score defaults to 0.0
+        result = evaluate_rule(rule, {})
+        assert result is not None
+        assert result["risk_score"] == 0.0
 
 
 # ============================================================
@@ -378,6 +877,52 @@ class TestRuleEngine:
         assert engine.run({"x": 1})[0]["rule_id"] == 2
         assert engine.run({"x": 2}) == []
         assert engine.run({"flag": "other"}) == []
+
+    def test_unregister_nonexistent_id_is_noop(self):
+        engine = RuleEngine()
+        engine.register(_build_rule(1, "GATEWAY_ANOMALY", True))
+        engine.unregister(999)
+        assert len(engine.run({})) == 1
+
+    def test_register_invalid_rule_raises(self):
+        engine = RuleEngine()
+        with pytest.raises(RuleValidationError):
+            engine.register({"id": 1})  # missing required fields
+
+    def test_run_with_no_rules_returns_empty(self):
+        engine = RuleEngine()
+        assert engine.run({}) == []
+
+    def test_run_batch_with_empty_trips(self):
+        engine = RuleEngine()
+        engine.register(_build_rule(1, "GATEWAY_ANOMALY", True))
+        assert engine.run_batch([]) == []
+
+    def test_enabled_none_treated_as_enabled(self):
+        """enabled 字段缺失时默认为 1（启用）"""
+        engine = RuleEngine()
+        rule = _build_rule(1, "GATEWAY_ANOMALY", True)
+        rule["enabled"] = None
+        engine.register(rule)
+        results = engine.run({})
+        assert len(results) == 1
+
+    def test_fraud_type_filter_with_multiple_types(self):
+        engine = RuleEngine()
+        engine.register(_build_rule(1, "GATEWAY_ANOMALY", True))
+        engine.register(_build_rule(2, "OBU_SHIELD", True))
+        engine.register(_build_rule(3, "TRUCK_AS_CAR", True))
+        results = engine.run({}, fraud_types=["GATEWAY_ANOMALY", "OBU_SHIELD"])
+        assert len(results) == 2
+        assert all(r["fraud_type"] in ("GATEWAY_ANOMALY", "OBU_SHIELD") for r in results)
+
+    def test_run_skips_rules_where_condition_not_met(self):
+        engine = RuleEngine()
+        engine.register(_build_rule(1, "GATEWAY_ANOMALY", ["eq", "$trip.x", 1]))
+        engine.register(_build_rule(2, "OBU_SHIELD", ["eq", "$trip.x", 2]))
+        results = engine.run({"x": 1})
+        assert len(results) == 1
+        assert results[0]["rule_id"] == 1
 
 
 # ============================================================

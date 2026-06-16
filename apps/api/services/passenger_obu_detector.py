@@ -1,17 +1,15 @@
-"""客车 OBU 监测 — 元数据预筛 + ML 图片识别 + LLM 复核(分两步)
+"""客车 OBU 监测 — 元数据预筛 + 图片识别 + LLM 复核
 
 命中规则(任一侧):
   1. vehicle_type == 1              (申报为客车)
   2. vehicle_id NOT LIKE '新A%'     (非新 A 开头)
   3. 已有 visual_type 不是货车       (SQL 预筛通过) — 可选优化
-  4. classify_truck → is_truck=True 且 llm_verify_truck → llm_verified=True
-     且 llm.is_truck=True            (LLM 复核通过,确实是货车)
+  4. 调 vehicle-ai-service.truck_obu() 命中(is_suspicious=True)
 
-两步调用语义(修复「ML 高自信漏调 LLM」BUG):
-  - 第一步 classify_truck:ML 视觉分类,纯图像,无 LLM。
-  - 第二步 llm_verify_truck(只在第一步返回 is_truck=True 时调用):LLM 二次复核。
-  - llm_verified=False 一律 drop(无论 maas_unavailable 还是 LLM 判否),
-    不接受 ML 单方面判定的命中。
+LLM 复核契约由 vehicle-ai-service.truck_obu() 端点内部保证:
+- AI service 修复了「ML 高自信漏调 LLM」BUG,现在 is_truck=True 时总是调 LLM。
+- LLM 失败时 AI service 返回 is_suspicious=True + llm_verified=False(fail-open),
+  我方仍按 is_suspicious 写嫌疑行,便于审计追溯与 disagreement 上报。
 """
 
 from typing import Any, Dict, List, Optional
@@ -32,8 +30,7 @@ def detect_trip(trip: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """返回 None 表示未命中;否则返回完整命中细节。
 
     details 字段(source_side / entry_visual_type / llm_verified / llm_confidence /
-    llm_reason / visual_vehicle_type / rule_version)在 task_executor 落
-    audit_results.details 时会被使用。
+    visual_vehicle_type / rule_version)在 task_executor 落 audit_results.details 时会被使用。
     """
     sides: List[Dict[str, Any]] = []
     for side, vtype_key, vid_key, vt_key, img_key, obu_key, mtype_key in _SIDE_KEYS:
@@ -48,11 +45,6 @@ def detect_trip(trip: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     source_side = 'BOTH' if len(sides) == 2 else sides[0]['side'].upper()
     primary = sides[0]
-    # 取首个非空 llm_reason(两侧通常一致)
-    llm_reason = next(
-        (s['llm_reason'] for s in sides if s.get('llm_reason')),
-        None,
-    )
     return {
         'fraud_type': FRAUD_TYPE,
         'source_side': source_side,
@@ -65,8 +57,7 @@ def detect_trip(trip: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         'entry_visual_type': trip.get('entry_visual_type'),
         'exit_visual_type': trip.get('exit_visual_type'),
         'llm_verified': all(s['llm_verified'] for s in sides),
-        'llm_confidence': sum(s['llm_confidence'] for s in sides) / len(sides),
-        'llm_reason': llm_reason,
+        'llm_confidence': sum(s['confidence'] for s in sides) / len(sides),
         'visual_vehicle_type': primary['visual_vehicle_type'],
         'risk_score': 0.95 if source_side == 'BOTH' else 0.85,
     }
@@ -96,60 +87,27 @@ def _side_check(
     if not image_url:
         return None
 
-    client = get_client()
-
-    # 第一步:ML 视觉分类(纯图像,无 LLM)
+    # 调 vehicle-ai-service(同步阻塞,失败/超时返回 None)
     try:
-        cls = client.classify_truck(image_url)
-    except Exception as e:
-        logger.error(
-            "vehicle-ai-service classify_truck raised for %s: %s", image_url, e,
-        )
-        return None
-    if 'error' in cls:
-        logger.error(
-            "vehicle-ai-service classify_truck failed for %s: %s", image_url, cls,
-        )
-        return None
-    if not cls.get('is_truck'):
-        # ML 判客车 → 直接放弃,无需 LLM
-        return None
-
-    ml_confidence = float(cls.get('confidence', 0.0))
-    visual_vehicle_type = cls.get('visual_vehicle_type')
-
-    # 第二步:LLM 复核(只在上一步判货车时调)
-    try:
-        llm = client.llm_verify_truck(
-            image_url, ml_is_truck=True, ml_confidence=ml_confidence,
+        resp = get_client().truck_obu(
+            image_url, declared_vehicle_type=DECLARED_VEHICLE_TYPE,
         )
     except Exception as e:
-        logger.error(
-            "vehicle-ai-service llm_verify_truck raised for %s: %s", image_url, e,
-        )
+        logger.error("vehicle-ai-service truck_obu raised for %s: %s", image_url, e)
         return None
-    if 'error' in llm:
-        logger.error(
-            "vehicle-ai-service llm_verify_truck failed for %s: %s", image_url, llm,
-        )
+    if 'error' in resp:
+        logger.error("vehicle-ai-service truck_obu failed for %s: %s", image_url, resp)
         return None
-    if not llm.get('llm_verified'):
-        # MaaS 不可用或 LLM 判否 → 严判:不命中(审计追溯交给公共服务 disagreement_store)
-        logger.warning(
-            "passenger_obu: LLM unverified, dropping url=%s err=%s",
-            image_url, llm.get('llm_error'),
-        )
+    # AI service 现在总是调 LLM(is_truck=True 时);fail-open(MaaS 抖动)时
+    # 仍返回 is_suspicious=True + llm_verified=False,主项目按 is_suspicious 写嫌疑行,
+    # llm_verified 字段透传供审计追溯与 disagreement_store 比对。
+    if not resp.get('is_suspicious'):
         return None
-    if not llm.get('is_truck'):
-        # LLM 复核判不是货车 → 不命中
-        return None
-
     return {
         'side': side,
-        'llm_verified': True,
-        'llm_confidence': float(llm.get('confidence', 0.0)),
-        'llm_reason': llm.get('llm_reason'),
-        'visual_vehicle_type': visual_vehicle_type,
+        'llm_verified': bool(resp.get('llm_verified')),
+        'confidence': float(resp.get('confidence', 0.0)),
+        'visual_vehicle_type': resp.get('visual_vehicle_type'),
         'image_url': image_url,
         'obu_id': trip.get(obu_key),
         'media_type': trip.get(mtype_key),

@@ -33,6 +33,11 @@ const LLM_ERROR_MAP = {
   },
 }
 
+const VEHICLE_TYPE_LABEL = { 1: '客车', 2: '货车', 14: '货车', 15: '货车', 16: '货车' }
+function vehicleTypeLabel(t) {
+  return VEHICLE_TYPE_LABEL[t] || (t == null ? '—' : String(t))
+}
+
 function mapLlmError(e) {
   if (!e) return { message: '调用失败', hint: '' }
   if (e.status === 401) {
@@ -252,6 +257,14 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
           <div className="detail-item">
             <span className="detail-label">出口站</span>
             <span className="detail-value">{trip.exit_station_name || '—'}</span>
+          </div>
+          <div className="detail-item">
+            <span className="detail-label">入口车型</span>
+            <span className="detail-value">{vehicleTypeLabel(trip.entry_vehicle_type)}</span>
+          </div>
+          <div className="detail-item">
+            <span className="detail-label">出口车型</span>
+            <span className="detail-value">{vehicleTypeLabel(trip.exit_vehicle_type)}</span>
           </div>
           <div className="detail-item">
             <span className="detail-label">入口时间</span>
