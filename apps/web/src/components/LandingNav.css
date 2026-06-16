@@ -27,7 +27,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #4f46e5, #a78bfa);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-active));
   color: #fff;
   border-radius: 8px;
   font-weight: 800;
@@ -47,11 +47,11 @@
 }
 .landing-nav-link:hover { color: #0f172a; }
 .landing-nav-link.active {
-  color: #4f46e5;
-  border-bottom-color: #4f46e5;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
 }
 .landing-nav-cta {
-  background: #4f46e5;
+  background: var(--color-primary);
   color: #fff;
   padding: 8px 14px;
   border-radius: 8px;
@@ -60,7 +60,7 @@
   text-decoration: none;
   transition: background .15s;
 }
-.landing-nav-cta:hover { background: #4338ca; }
+.landing-nav-cta:hover { background: var(--color-primary-hover); }
 
 @media (max-width: 768px) {
   .landing-nav-links { display: none; }

@@ -306,6 +306,19 @@ def mock_ai_client():
     拷到模块 namespace。要让 patch 生效,必须 patch 这 4 处的本地绑定,不能只 patch 源模块。
     """
     fake = MagicMock()
+    fake.classify_truck.return_value = {
+        'is_truck': True,
+        'confidence': 0.95,
+        'visual_vehicle_type': 'truck',
+        'model_version': 'resnet18',
+    }
+    fake.llm_verify_truck.return_value = {
+        'is_truck': True,
+        'confidence': 0.92,
+        'llm_verified': True,
+        'llm_reason': '车头有货箱,识别为厢式货车',
+        'llm_error': None,
+    }
     fake.truck_obu.return_value = {
         'is_suspicious': True,
         'fraud_type': 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A',

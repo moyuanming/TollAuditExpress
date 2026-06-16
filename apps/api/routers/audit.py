@@ -719,6 +719,7 @@ async def get_passenger_obu_daily_stats(
 @router.get("/passenger-obu/anomalies", response_model=PassengerObuAnomalyListResponse)
 async def get_passenger_obu_anomalies(
     process_status: Optional[str] = None,
+    llm_result: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ):
@@ -727,11 +728,13 @@ async def get_passenger_obu_anomalies(
     rows = audit_repo.get_suspects(
         fraud_types=['PASSENGER_USES_TRUCK_OBU_NON_NEW_A'],
         process_status=process_status,
+        llm_result=llm_result,
         limit=limit, offset=offset,
     )
     total = audit_repo.get_suspects_count(
         fraud_types=['PASSENGER_USES_TRUCK_OBU_NON_NEW_A'],
         process_status=process_status,
+        llm_result=llm_result,
     )
     items: List[PassengerObuAnomalyItem] = []
     for r in rows:

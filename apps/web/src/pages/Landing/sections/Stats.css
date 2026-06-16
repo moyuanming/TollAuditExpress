@@ -9,7 +9,7 @@
 .stats-num {
   font-size: 40px;
   font-weight: 800;
-  background: linear-gradient(135deg, #4f46e5, #a78bfa);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-active));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

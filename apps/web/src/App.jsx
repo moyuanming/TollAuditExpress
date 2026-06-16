@@ -13,6 +13,7 @@ import Landing from './pages/Landing/Landing'
 import { onApiError } from './api/audit'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import { AuthGuard } from './components/AuthGuard'
+import Icon from './components/Icon'
 
 function AppNav() {
   const { isAuthenticated, logout } = useAuth()
@@ -20,33 +21,33 @@ function AppNav() {
   return (
     <nav className="nav">
       <div className="nav-brand">
-        <div className="nav-brand-icon">稽</div>
+        <div className="nav-brand-icon"><Icon name="shield-check" size="lg" /></div>
         <h1>高速公路收费稽核系统</h1>
       </div>
       <div className="nav-links">
         <NavLink to="/app" end className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          📊 仪表盘
+          <Icon name="layout-dashboard" />仪表盘
         </NavLink>
         <NavLink to="/app/trips" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          🚗 行程查询
+          <Icon name="route" />行程查询
         </NavLink>
         <NavLink to="/app/vehicles" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          🔎 车辆查询
+          <Icon name="search" />车辆查询
         </NavLink>
         <NavLink to="/app/suspects" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          ⚠️ 可疑记录
+          <Icon name="alert-triangle" />可疑记录
         </NavLink>
         <NavLink to="/app/stats" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          📈 统计分析
+          <Icon name="trending-up" />统计分析
         </NavLink>
         <NavLink to="/app/tasks" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          ⏰ 定时任务
+          <Icon name="clock" />定时任务
         </NavLink>
         <NavLink to="/app/passenger-obu-monitor" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          🚗 客车OBU监测
+          <Icon name="bus" />客车OBU监测
         </NavLink>
         <NavLink to="/app/rules" className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
-          📐 规则管理
+          <Icon name="ruler" />规则管理
         </NavLink>
       </div>
       {isAuthenticated && (

@@ -5,25 +5,25 @@ import VehicleTripDetail from '../components/VehicleTripDetail'
 import { formatTime } from '../components/tripDetailUtils'
 
 const FRAUD_TYPE_LABEL = {
-  PASSENGER_USES_TRUCK_OBU_NON_NEW_A: '🚗 客车套货OBU',
-  TRUCK_AS_CAR: '🚛 货套客',
-  ENTRY_EXIT_MISMATCH: '🚗 出入口不一致',
-  GATEWAY_ANOMALY: '🛣️ 门架异常',
-  VEHICLE_TYPE_DOWNGRADE: '🔻 大车小标',
-  SAME_PLATE_DIFF_VEHICLE: '🎭 同牌不同车',
-  OBU_UNBIND: '🔁 OBU 借用',
-  OBU_SHIELD: '🛡️ OBU 屏蔽'
+  PASSENGER_USES_TRUCK_OBU_NON_NEW_A: '客车套货OBU',
+  TRUCK_AS_CAR: '货套客',
+  ENTRY_EXIT_MISMATCH: '出入口不一致',
+  GATEWAY_ANOMALY: '门架异常',
+  VEHICLE_TYPE_DOWNGRADE: '大车小标',
+  SAME_PLATE_DIFF_VEHICLE: '同牌不同车',
+  OBU_UNBIND: 'OBU 借用',
+  OBU_SHIELD: 'OBU 屏蔽'
 }
 
 const FRAUD_TYPE_FILTER_OPTIONS = [
-  { value: 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A', label: '🚗 客套货OBU' },
-  { value: 'TRUCK_AS_CAR', label: '🚛 货套客' },
-  { value: 'ENTRY_EXIT_MISMATCH', label: '🚗 出入口' },
-  { value: 'GATEWAY_ANOMALY', label: '🛣️ 门架异常' },
-  { value: 'VEHICLE_TYPE_DOWNGRADE', label: '🔻 大车小标' },
-  { value: 'SAME_PLATE_DIFF_VEHICLE', label: '🎭 同牌不同车' },
-  { value: 'OBU_UNBIND', label: '🔁 OBU 借用' },
-  { value: 'OBU_SHIELD', label: '🛡️ OBU 屏蔽' }
+  { value: 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A', label: '客套货OBU' },
+  { value: 'TRUCK_AS_CAR', label: '货套客' },
+  { value: 'ENTRY_EXIT_MISMATCH', label: '出入口' },
+  { value: 'GATEWAY_ANOMALY', label: '门架异常' },
+  { value: 'VEHICLE_TYPE_DOWNGRADE', label: '大车小标' },
+  { value: 'SAME_PLATE_DIFF_VEHICLE', label: '同牌不同车' },
+  { value: 'OBU_UNBIND', label: 'OBU 借用' },
+  { value: 'OBU_SHIELD', label: 'OBU 屏蔽' }
 ]
 
 const FRAUD_TYPE_BADGE_CLASS = {
@@ -141,7 +141,7 @@ function SuspectList() {
   const actionForm = selectedDetail && (
     selectedDetail.process_status === 'UNPROCESSED' ? (
       <div className="detail-section">
-        <div className="detail-section-title">✍️ 稽核判定</div>
+        <div className="detail-section-title">稽核判定</div>
         <div className="form-group">
           <label>操作员</label>
           <input
@@ -162,18 +162,18 @@ function SuspectList() {
             rows={2}
           />
         </div>
-        <div className="form-actions" style={{ marginTop: 12 }}>
+        <div className="form-actions mt-3">
           <button
             className="btn btn-secondary"
             onClick={() => handleProcess(selectedDetail.id, 'REJECTED')}
           >
-            ✗ 排除（误报）
+            排除（误报）
           </button>
           <button
             className="btn btn-danger"
             onClick={() => handleProcess(selectedDetail.id, 'CONFIRMED')}
           >
-            ✓ 确认逃费
+            确认逃费
           </button>
         </div>
       </div>
@@ -195,7 +195,7 @@ function SuspectList() {
         </div>
         <div className="stats-strip">
           <div className="stat-mini">
-            <span className="stat-mini-icon">📊</span>
+            <span className="stat-mini-icon"></span>
             <div className="stat-mini-content">
               <span className="stat-mini-value">{suspects.length}</span>
               <span className="stat-mini-label">当前显示</span>
@@ -265,8 +265,8 @@ function SuspectList() {
             <option value="different">不同车</option>
           </select>
         </div>
-        <div className="filter-group" style={{ marginLeft: 'auto', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
-          💡 提示: 点击 chip 多选；点击表格行查看详情
+        <div className="filter-group ml-auto muted text-0p75">
+          提示: 点击 chip 多选；点击表格行查看详情
         </div>
       </div>
 
@@ -276,26 +276,26 @@ function SuspectList() {
             <table className="table">
               <thead>
                 <tr>
-                  <th style={{width: '60px'}}>ID</th>
-                  <th style={{width: '110px'}}>PASSID</th>
-                  <th style={{width: '120px'}}>欺诈类型</th>
-                  <th style={{width: '90px'}}>入口车辆</th>
-                  <th style={{width: '80px'}}>入口站</th>
-                  <th style={{width: '110px'}}>入口时间</th>
-                  <th style={{width: '90px'}}>出口车辆</th>
-                  <th style={{width: '80px'}}>出口站</th>
-                  <th style={{width: '110px'}}>出口时间</th>
-                  <th style={{width: '80px'}}>入口视觉</th>
-                  <th style={{width: '80px'}}>出口视觉</th>
-                  <th style={{width: '70px'}}>风险评分</th>
-                  <th style={{width: '100px'}}>LLM 结果</th>
-                  <th style={{width: '80px'}}>状态</th>
+                  <th className="col-id">ID</th>
+                  <th className="w-110">PASSID</th>
+                  <th className="col-fraud-type">欺诈类型</th>
+                  <th className="w-90">入口车辆</th>
+                  <th className="w-80">入口站</th>
+                  <th className="col-time">入口时间</th>
+                  <th className="w-90">出口车辆</th>
+                  <th className="w-80">出口站</th>
+                  <th className="col-time">出口时间</th>
+                  <th className="w-80">入口视觉</th>
+                  <th className="w-80">出口视觉</th>
+                  <th className="col-narrow">风险评分</th>
+                  <th className="w-100px">LLM 结果</th>
+                  <th className="w-80">状态</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={14} style={{textAlign: 'center', padding: '2rem'}}>
+                    <td colSpan={14} className="text-center p-4">
                       <span className="loading-spinner"></span> 加载中...
                     </td>
                   </tr>
@@ -303,7 +303,7 @@ function SuspectList() {
                   <tr>
                     <td colSpan={14}>
                       <div className="empty-state">
-                        <div className="empty-state-icon">✅</div>
+                        <div className="empty-state-icon"></div>
                         <div className="empty-state-title">暂无可疑记录</div>
                         <div className="empty-state-text">系统运行正常，未检测到异常</div>
                       </div>
@@ -314,10 +314,8 @@ function SuspectList() {
                     <tr
                       key={s.id}
                       onClick={() => selectRow(s.id)}
-                      style={{
-                        cursor: 'pointer',
-                        background: selectedId === s.id ? 'var(--accent-blue-bg)' : undefined
-                      }}
+                      className="cursor-pointer"
+                      data-selected={selectedId === s.id ? 'true' : undefined}
                     >
                       <td><span className="mono">#{s.id}</span></td>
                       <td><span className="mono">{s.passid}</span></td>
@@ -326,39 +324,33 @@ function SuspectList() {
                           {FRAUD_TYPE_LABEL[s.fraud_type] || s.fraud_type}
                         </span>
                       </td>
-                      <td><span style={{fontWeight: 500}}>{s.entry_vehicle_id || '-'}</span></td>
-                      <td><span style={{fontSize: '0.75rem'}}>{s.entry_station_name || '-'}</span></td>
-                      <td><span className="mono" style={{fontSize: '0.7rem'}}>{formatTime(s.entry_time)}</span></td>
-                      <td><span style={{fontWeight: 500}}>{s.exit_vehicle_id || '-'}</span></td>
-                      <td><span style={{fontSize: '0.75rem'}}>{s.exit_station_name || '-'}</span></td>
-                      <td><span className="mono" style={{fontSize: '0.7rem'}}>{formatTime(s.exit_time)}</span></td>
+                      <td><span className="font-medium">{s.entry_vehicle_id || '-'}</span></td>
+                      <td><span className="text-sm">{s.entry_station_name || '-'}</span></td>
+                      <td><span className="mono text-xs">{formatTime(s.entry_time)}</span></td>
+                      <td><span className="font-medium">{s.exit_vehicle_id || '-'}</span></td>
+                      <td><span className="text-sm">{s.exit_station_name || '-'}</span></td>
+                      <td><span className="mono text-xs">{formatTime(s.exit_time)}</span></td>
                       <td>
-                        <span style={{
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: 4,
-                          fontSize: '0.75rem',
-                          background: s.entry_visual_type === 'truck' ? 'var(--accent-red-bg)' : 'var(--accent-green-bg)',
-                          color: s.entry_visual_type === 'truck' ? 'var(--accent-red)' : 'var(--accent-green)'
-                        }}>
+                        <span
+                          className="pill text-0p75"
+                          data-risk={s.entry_visual_type === 'truck' ? 'high' : 'low'}
+                        >
                           {s.entry_visual_type === 'truck' ? '货车' : s.entry_visual_type === 'car' ? '客车' : '-'}
                         </span>
                       </td>
                       <td>
-                        <span style={{
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: 4,
-                          fontSize: '0.75rem',
-                          background: s.exit_visual_type === 'truck' ? 'var(--accent-red-bg)' : 'var(--accent-green-bg)',
-                          color: s.exit_visual_type === 'truck' ? 'var(--accent-red)' : 'var(--accent-green)'
-                        }}>
+                        <span
+                          className="pill text-0p75"
+                          data-risk={s.exit_visual_type === 'truck' ? 'high' : 'low'}
+                        >
                           {s.exit_visual_type === 'truck' ? '货车' : s.exit_visual_type === 'car' ? '客车' : '-'}
                         </span>
                       </td>
                       <td>
-                        <span style={{
-                          fontWeight: 600,
-                          color: (s.risk_score || 0) > 0.7 ? 'var(--accent-red)' : 'var(--accent-amber)'
-                        }}>
+                        <span
+                          className="font-bold"
+                          data-risk={(s.risk_score || 0) > 0.7 ? 'high' : 'medium'}
+                        >
                           {(s.risk_score || 0).toFixed(2)}
                         </span>
                       </td>
@@ -367,11 +359,11 @@ function SuspectList() {
                           <span className="badge badge-info" title="待 LLM 判定">未判定</span>
                         ) : s.llm_is_same_vehicle === 1 ? (
                           <span className="badge badge-success" title={`置信度 ${((s.llm_confidence || 0) * 100).toFixed(0)}%`}>
-                            ✅ 同一辆
+                            同一辆
                           </span>
                         ) : s.llm_is_same_vehicle === 0 ? (
                           <span className="badge badge-danger" title={`置信度 ${((s.llm_confidence || 0) * 100).toFixed(0)}%`}>
-                            ❌ 不同车
+                            不同车
                           </span>
                         ) : (
                           <span className="badge badge-warning">—</span>
@@ -391,29 +383,29 @@ function SuspectList() {
         </div>
 
         {selectedId != null && (
-          <div className="detail-panel" style={{ width: 480 }}>
+          <div className="detail-panel w-480">
             <div className="detail-header">
               <div>
                 <div className="detail-title">
                   可疑记录 #{selectedId}
                 </div>
                 {selectedDetail && (
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                  <div className="text-0p75 text-secondary mt-1">
                     {FRAUD_TYPE_LABEL[selectedDetail.fraud_type] || selectedDetail.fraud_type}
                     {selectedDetail.process_status !== 'UNPROCESSED' && (
-                      <> · <span className={`badge badge-${selectedDetail.process_status === 'CONFIRMED' ? 'danger' : 'success'}`} style={{ fontSize: '0.65rem' }}>
+                      <> · <span className={`badge badge-${selectedDetail.process_status === 'CONFIRMED' ? 'danger' : 'success'} text-0p65`}>
                         {STATUS_LABEL[selectedDetail.process_status]}
                       </span></>
                     )}
                   </div>
                 )}
               </div>
-              <button className="detail-close" onClick={() => selectRow(null)}>✕</button>
+              <button className="detail-close" onClick={() => selectRow(null)}></button>
             </div>
 
             <div className="detail-body">
               {detailLoading ? (
-                <div style={{ textAlign: 'center', padding: '2rem' }}>
+                <div className="text-center p-4">
                   <span className="loading-spinner"></span> 加载详情中...
                 </div>
               ) : !tripForDetail ? (

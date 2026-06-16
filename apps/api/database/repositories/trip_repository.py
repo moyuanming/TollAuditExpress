@@ -434,7 +434,12 @@ class TripRepository:
         limit: int = 500,
         offset: int = 0,
     ) -> List[Dict]:
-        """查询客车+非新A+任一侧有 image_trans 的候选 trip（带分页）。
+        """DEPRECATED: Use doris_trip_query.find_passenger_obu_candidates_doris instead.
+
+        本方法查 audit_trips 聚合表，缺少 MEDIATYPE 过滤且依赖预聚合步骤。
+        新方法直接查 t_waste_en_ex_gantry 原始表，含 VEHICLETYPE + MEDIATYPE + 车牌过滤。
+
+        查询客车+非新A+任一侧有 image_trans 的候选 trip（带分页）。
 
         命中后还会进一步走 vehicle-ai-service 复核 + LLM 验证(在 detector 层)。
         这里只做 SQL 预筛,省一次模型调用。

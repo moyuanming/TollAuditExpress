@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { auditApi } from '../api/audit'
+import Icon from '../components/Icon'
 
 function Dashboard() {
   const [stats, setStats] = useState(null)
@@ -62,44 +63,44 @@ function Dashboard() {
           <h2 className="page-title">仪表盘</h2>
           <span className="page-subtitle">实时监控高速公路收费稽核情况</span>
         </div>
-        <div style={{display: 'flex', gap: '0.75rem'}}>
+        <div className="toolbar-actions">
           <button className="btn btn-secondary" onClick={loadStats}>
-            🔄 刷新
+            <Icon name="refresh" />刷新
           </button>
-          <button 
-            className="btn btn-primary" 
+          <button
+            className="btn btn-primary"
             onClick={startAggregation}
             disabled={aggregating}
           >
-            {aggregating ? '⏳ 聚合中...' : '🚀 启动聚合'}
+            {aggregating ? <><Icon name="loader" className="spin" />聚合中...</> : <><Icon name="play" />启动聚合</>}
           </button>
         </div>
       </div>
 
       <div className="stats-strip">
         <div className="stat-mini">
-          <span className="stat-mini-icon">🚗</span>
+          <span className="stat-mini-icon"><Icon name="route" /></span>
           <div className="stat-mini-content">
             <span className="stat-mini-value">{stats?.total_trips || 0}</span>
             <span className="stat-mini-label">行程总量</span>
           </div>
         </div>
         <div className="stat-mini">
-          <span className="stat-mini-icon">✅</span>
+          <span className="stat-mini-icon"><Icon name="check" /></span>
           <div className="stat-mini-content">
             <span className="stat-mini-value">{stats?.verified_trips || 0}</span>
             <span className="stat-mini-label">已核验</span>
           </div>
         </div>
         <div className="stat-mini">
-          <span className="stat-mini-icon">⚠️</span>
+          <span className="stat-mini-icon"><Icon name="alert-triangle" /></span>
           <div className="stat-mini-content">
             <span className="stat-mini-value">{stats?.suspected_trips || 0}</span>
             <span className="stat-mini-label">可疑记录</span>
           </div>
         </div>
         <div className="stat-mini">
-          <span className="stat-mini-icon">🚨</span>
+          <span className="stat-mini-icon"><Icon name="alert-circle" /></span>
           <div className="stat-mini-content">
             <span className="stat-mini-value">{stats?.confirmed_fraud || 0}</span>
             <span className="stat-mini-label">确认欺诈</span>
@@ -108,120 +109,84 @@ function Dashboard() {
       </div>
 
       <div className="content-area">
-        <div className="table-panel" style={{flex: 1}}>
-          <div style={{padding: '1rem', borderBottom: '1px solid var(--border-primary)'}}>
-            <span style={{fontWeight: 600, fontSize: '0.95rem'}}>🔍 双模型检测流水线</span>
+        <div className="table-panel flex-1">
+          <div className="panel-section-header">
+            <Icon name="git-branch" /><span>双模型检测流水线</span>
           </div>
-          
-          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', padding: '1rem'}}>
+
+          <div className="pipeline-grid">
             {/* Model A */}
-            <div style={{
-              border: '1px solid var(--border-primary)',
-              borderRadius: 'var(--radius-lg)',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                padding: '0.75rem 1rem',
-                background: 'var(--accent-purple-bg)',
-                borderBottom: '1px solid var(--border-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}>
-                <span style={{fontSize: '1.25rem'}}>🚛</span>
-                <span style={{fontWeight: 600, color: 'var(--accent-purple)'}}>模型A: 货车套用客车OBU</span>
+            <div className="pipeline-card">
+              <div className="pipeline-card-header pipeline-card-header-purple">
+                <Icon name="bus" size="lg" />
+                <span className="pipeline-card-title">模型A: 货车套用客车OBU</span>
               </div>
-              <div style={{padding: '1rem'}}>
-                <div style={{marginBottom: '1rem'}}>
-                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.5rem'}}>检测逻辑</div>
-                  <div style={{fontSize: '0.875rem', lineHeight: 1.6}}>
-                    检测交易记录为<strong style={{color: 'var(--accent-green)'}}>客车</strong>，
-                    但图片视觉识别为<strong style={{color: 'var(--accent-red)'}}>货车</strong>的情况。
+              <div className="pipeline-card-body">
+                <div className="mb-4">
+                  <div className="pipeline-subsection-label">检测逻辑</div>
+                  <div className="pipeline-subsection-text">
+                    检测交易记录为<strong className="text-success">客车</strong>，
+                    但图片视觉识别为<strong className="text-danger">货车</strong>的情况。
                   </div>
                 </div>
-                <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                    <span style={{color: 'var(--accent-purple)'}}>▸</span>
-                    <span style={{fontSize: '0.85rem'}}>获取交易记录 (LANETYPE=入口)</span>
+                <div className="flex-col gap-2">
+                  <div className="pipeline-step">
+                    <Icon name="chevron-right" className="text-info" size="sm" />
+                    <span>获取交易记录 (LANETYPE=入口)</span>
                   </div>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                    <span style={{color: 'var(--accent-purple)'}}>▸</span>
-                    <span style={{fontSize: '0.85rem'}}>下载 _trans.jpg 车辆图片</span>
+                  <div className="pipeline-step">
+                    <Icon name="chevron-right" className="text-info" size="sm" />
+                    <span>下载 _trans.jpg 车辆图片</span>
                   </div>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                    <span style={{color: 'var(--accent-purple)'}}>▸</span>
-                    <span style={{fontSize: '0.85rem'}}>VehicleClassifier 视觉识别</span>
+                  <div className="pipeline-step">
+                    <Icon name="chevron-right" className="text-info" size="sm" />
+                    <span>VehicleClassifier 视觉识别</span>
                   </div>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                    <span style={{color: 'var(--accent-purple)'}}>▸</span>
-                    <span style={{fontSize: '0.85rem'}}>输出风险评分和稽核结果</span>
+                  <div className="pipeline-step">
+                    <Icon name="chevron-right" className="text-info" size="sm" />
+                    <span>输出风险评分和稽核结果</span>
                   </div>
                 </div>
-                <div style={{
-                  marginTop: '1rem',
-                  padding: '0.75rem',
-                  background: 'var(--bg-secondary)',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: '0.8rem',
-                  color: 'var(--text-secondary)'
-                }}>
+                <div className="pipeline-judge">
                   <strong>判断标准:</strong> 交易车型=客车 且 视觉识别=货车 → 可疑
                 </div>
               </div>
             </div>
 
             {/* Model B */}
-            <div style={{
-              border: '1px solid var(--border-primary)',
-              borderRadius: 'var(--radius-lg)',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                padding: '0.75rem 1rem',
-                background: 'var(--accent-blue-bg)',
-                borderBottom: '1px solid var(--border-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}>
-                <span style={{fontSize: '1.25rem'}}>🚗</span>
-                <span style={{fontWeight: 600, color: 'var(--accent-blue)'}}>模型B: 出入口车辆比对</span>
+            <div className="pipeline-card">
+              <div className="pipeline-card-header pipeline-card-header-blue">
+                <Icon name="route" size="lg" />
+                <span className="pipeline-card-title">模型B: 出入口车辆比对</span>
               </div>
-              <div style={{padding: '1rem'}}>
-                <div style={{marginBottom: '1rem'}}>
-                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.5rem'}}>检测逻辑</div>
-                  <div style={{fontSize: '0.875rem', lineHeight: 1.6}}>
-                    比对出入口车辆<strong style={{color: 'var(--accent-blue)'}}>颜色</strong>、
-                    <strong style={{color: 'var(--accent-blue)'}}>车型</strong>和
-                    <strong style={{color: 'var(--accent-blue)'}}>车纹</strong>相似度。
+              <div className="pipeline-card-body">
+                <div className="mb-4">
+                  <div className="pipeline-subsection-label">检测逻辑</div>
+                  <div className="pipeline-subsection-text">
+                    比对出入口车辆<strong className="text-info">颜色</strong>、
+                    <strong className="text-info">车型</strong>和
+                    <strong className="text-info">车纹</strong>相似度。
                   </div>
                 </div>
-                <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                    <span style={{color: 'var(--accent-blue)'}}>▸</span>
-                    <span style={{fontSize: '0.85rem'}}>下载入口/出口 _license.jpg</span>
+                <div className="flex-col gap-2">
+                  <div className="pipeline-step">
+                    <Icon name="chevron-right" className="text-info" size="sm" />
+                    <span>下载入口/出口 _license.jpg</span>
                   </div>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                    <span style={{color: 'var(--accent-blue)'}}>▸</span>
-                    <span style={{fontSize: '0.85rem'}}>HSV 颜色主色调分析</span>
+                  <div className="pipeline-step">
+                    <Icon name="chevron-right" className="text-info" size="sm" />
+                    <span>HSV 颜色主色调分析</span>
                   </div>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                    <span style={{color: 'var(--accent-blue)'}}>▸</span>
-                    <span style={{fontSize: '0.85rem'}}>VehicleClassifier 车型比对</span>
+                  <div className="pipeline-step">
+                    <Icon name="chevron-right" className="text-info" size="sm" />
+                    <span>VehicleClassifier 车型比对</span>
                   </div>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                    <span style={{color: 'var(--accent-blue)'}}>▸</span>
-                    <span style={{fontSize: '0.85rem'}}>ResNet50 车纹特征提取 + 余弦相似度</span>
+                  <div className="pipeline-step">
+                    <Icon name="chevron-right" className="text-info" size="sm" />
+                    <span>ResNet50 车纹特征提取 + 余弦相似度</span>
                   </div>
                 </div>
-                <div style={{
-                  marginTop: '1rem',
-                  padding: '0.75rem',
-                  background: 'var(--bg-secondary)',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: '0.8rem',
-                  color: 'var(--text-secondary)'
-                }}>
+                <div className="pipeline-judge">
                   <strong>判断标准:</strong> 颜色不一致 或 车型不一致 或 车纹相似度 &lt; 60% → 可疑
                 </div>
               </div>
@@ -229,20 +194,22 @@ function Dashboard() {
           </div>
 
           {progress && (
-            <div style={{padding: '1rem', borderTop: '1px solid var(--border-primary)'}}>
+            <div className="panel-section-body">
               {progress.status === 'error' ? (
-                <div style={{color: 'var(--accent-red)'}}>
-                  ❌ 聚合失败: {progress.message || '未知错误'}
+                <div className="text-danger flex-row items-center gap-2">
+                  <Icon name="x-circle" />聚合失败: {progress.message || '未知错误'}
                 </div>
               ) : progress.status === 'not_found' ? (
-                <div style={{color: 'var(--text-secondary)'}}>未找到聚合任务</div>
+                <div className="text-secondary">未找到聚合任务</div>
               ) : (
                 <>
-                  <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem'}}>
-                    <span style={{fontWeight: 600}}>
-                      {progress.status === 'completed' ? '✅ 聚合完成' : '🔄 聚合进行中'}
+                  <div className="flex-row items-center justify-between mb-3">
+                    <span className="font-semibold flex-row items-center gap-2">
+                      {progress.status === 'completed'
+                        ? <><Icon name="check" className="text-success" />聚合完成</>
+                        : <><Icon name="loader" className="spin text-info" />聚合进行中</>}
                     </span>
-                    <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                    <span className="text-sm text-secondary">
                       {progress.total > 0
                         ? `${progress.current || 0} / ${progress.total || 0} 条`
                         : '正在查询源数据库...'}
@@ -254,8 +221,8 @@ function Dashboard() {
                       style={{ width: `${((progress.current || 0) / (progress.total || 1)) * 100}%` }}
                     />
                   </div>
-                  <div style={{marginTop: '0.75rem', display: 'flex', gap: '2rem', fontSize: '0.85rem'}}>
-                    <span style={{color: 'var(--accent-green)'}}>已处理: {progress.count || 0}</span>
+                  <div className="mt-3 flex-row gap-4 text-sm">
+                    <span className="text-success">已处理: {progress.count || 0}</span>
                     <span>当前: {progress.passid || '-'}</span>
                   </div>
                 </>

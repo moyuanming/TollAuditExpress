@@ -1,5 +1,6 @@
 """后台任务调度器 — daemon 线程，定期检查到期任务并执行"""
 
+import os
 import threading
 import logging
 import time
@@ -12,7 +13,9 @@ _scheduler_started = False
 _scheduler_lock = threading.Lock()
 
 # 单次任务最长执行时长（分钟）。超过则标记为失败，避免僵尸线程/记录堆积。
-MAX_EXECUTION_MINUTES = 60
+# 可通过 MAX_EXECUTION_MINUTES 环境变量覆盖；默认 60 分钟对全量回填偏紧，
+# 客车 OBU 全量 17k+ 候选按当前 AI service 速率需更长,推荐部署时设 360。
+MAX_EXECUTION_MINUTES = int(os.getenv('MAX_EXECUTION_MINUTES', '60'))
 
 
 def start_scheduler():
@@ -148,7 +151,7 @@ def _execute_and_record(task: dict, execution_id: int):
         )
         logger.info("Task [%d] completed: %s", task['id'], result)
     except Exception as e:
-        logger.error("Task [%d] failed: %s", task['id'], e)
+        logger.error("Task [%d] failed: %s", task['id'], e, exc_info=True)
         try:
             from apps.api.database.repositories.task_repository import TaskRepository
             TaskRepository().complete_execution(execution_id, error_message=str(e))

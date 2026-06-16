@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { rulesApi } from '../api/rules'
+import Icon from '../components/Icon'
 
 const FRAUD_TYPE_OPTIONS = [
-  { value: 'TRUCK_AS_CAR', label: '🚛 货套客' },
-  { value: 'ENTRY_EXIT_MISMATCH', label: '🚗 出入口不一致' },
-  { value: 'GATEWAY_ANOMALY', label: '🛣️ 门架异常' },
-  { value: 'VEHICLE_TYPE_DOWNGRADE', label: '🔻 大车小标' },
-  { value: 'SAME_PLATE_DIFF_VEHICLE', label: '🎭 同牌不同车' },
-  { value: 'OBU_UNBIND', label: '🔁 OBU 借用' },
-  { value: 'OBU_SHIELD', label: '🛡️ OBU 屏蔽' }
+  { value: 'TRUCK_AS_CAR', label: '货套客' },
+  { value: 'ENTRY_EXIT_MISMATCH', label: '出入口不一致' },
+  { value: 'GATEWAY_ANOMALY', label: '门架异常' },
+  { value: 'VEHICLE_TYPE_DOWNGRADE', label: '大车小标' },
+  { value: 'SAME_PLATE_DIFF_VEHICLE', label: '同牌不同车' },
+  { value: 'OBU_UNBIND', label: 'OBU 借用' },
+  { value: 'OBU_SHIELD', label: 'OBU 屏蔽' }
 ]
 
 const FRAUD_TYPE_LABEL = FRAUD_TYPE_OPTIONS.reduce((m, o) => {
@@ -411,38 +412,37 @@ function RuleStudio() {
           <h2 className="page-title">规则管理</h2>
           <span className="page-subtitle">管理检测规则表达式、阈值、试运行状态</span>
         </div>
-        <div className="stats-strip" style={{ marginLeft: 'auto' }}>
+        <div className="stats-strip ml-auto">
           <div className="stat-mini">
-            <span className="stat-mini-icon">📋</span>
+            <span className="stat-mini-icon"></span>
             <div className="stat-mini-content">
               <span className="stat-mini-value">{rules.length}</span>
               <span className="stat-mini-label">规则总数</span>
             </div>
           </div>
           <div className="stat-mini">
-            <span className="stat-mini-icon">✅</span>
+            <span className="stat-mini-icon"></span>
             <div className="stat-mini-content">
               <span className="stat-mini-value">{enabledCount}</span>
               <span className="stat-mini-label">已启用</span>
             </div>
           </div>
           <div className="stat-mini">
-            <span className="stat-mini-icon">🧪</span>
+            <span className="stat-mini-icon"><Icon name="activity" /></span>
             <div className="stat-mini-content">
               <span className="stat-mini-value">{dryRunCount}</span>
               <span className="stat-mini-label">试运行中</span>
             </div>
           </div>
         </div>
-        <button className="btn btn-primary" onClick={openCreate} style={{ marginLeft: 12 }}>
+        <button className="btn btn-primary ml-3" onClick={openCreate}>
           + 新建规则
         </button>
         <button
-          className={`btn btn-sm ${showGuide ? 'btn-secondary' : 'btn-secondary'}`}
+          className={`btn btn-sm ml-1p5 ${showGuide ? 'btn-secondary' : 'btn-secondary'}`}
           onClick={() => setShowGuide(!showGuide)}
-          style={{ marginLeft: 6 }}
         >
-          {showGuide ? '收起说明' : '📖 规则说明'}
+          {showGuide ? '收起说明' : '规则说明'}
         </button>
       </div>
 
@@ -472,79 +472,55 @@ function RuleStudio() {
             <option value="0">已停用</option>
           </select>
         </div>
-        <div className="filter-group" style={{ marginLeft: 'auto', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
-          💡 点击"规则说明"查看欺诈类型定义与 DSL 语法
+        <div className="filter-group ml-auto muted text-0p75">
+          点击"规则说明"查看欺诈类型定义与 DSL 语法
         </div>
       </div>
 
       {showGuide && (
-        <div className="rule-guide-panel" style={{
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border-primary)',
-          borderRadius: 'var(--radius-md)',
-          padding: '1.25rem 1.5rem',
-          marginBottom: '1rem'
-        }}>
-          <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-            📖 欺诈类型定义与检测逻辑
+        <div className="guide-panel">
+          <h4 className="guide-section-title">
+            欺诈类型定义与检测逻辑
           </h4>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '0.75rem' }}>
+          <div className="guide-grid">
             {Object.entries(FRAUD_TYPE_GUIDE).map(([key, guide]) => (
-              <div key={key} style={{
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border-primary)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '0.75rem 1rem'
-              }}>
-                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 4, color: 'var(--text-primary)' }}>
+              <div key={key} className="guide-card">
+                <div className="guide-title">
                   {guide.title}
                 </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
+                <div className="guide-desc">
                   {guide.desc}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--accent-blue)', marginBottom: 4, lineHeight: 1.5 }}>
+                <div className="guide-logic">
                   <strong>检测逻辑：</strong>{guide.logic}
                 </div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+                <div className="text-xs text-tertiary">
                   常用字段：{guide.fields.map(f => `$trip.${f}`).join('、')}
                 </div>
               </div>
             ))}
           </div>
 
-          <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-            🔧 DSL 操作符参考
+          <h4 className="guide-section-title-mt">
+            DSL 操作符参考
           </h4>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-            gap: '0.25rem 1rem',
-            fontSize: '0.75rem'
-          }}>
+          <div className="guide-grid-220">
             {OPERATOR_GUIDE.map(item => (
-              <div key={item.op} style={{ display: 'flex', gap: 6, padding: '2px 0' }}>
-                <code style={{
-                  background: 'var(--bg-tertiary)',
-                  padding: '1px 6px',
-                  borderRadius: 3,
-                  fontFamily: 'monospace',
-                  fontWeight: 600,
-                  color: 'var(--accent-purple)',
-                  whiteSpace: 'nowrap'
-                }}>
+              <div key={item.op} className="guide-op-row">
+                <code className="guide-op-chip">
                   {item.op}
                 </code>
-                <span style={{ color: 'var(--text-tertiary)' }}>({item.args})</span>
-                <span style={{ color: 'var(--text-secondary)' }}>{item.desc}</span>
+                <span className="text-tertiary">({item.args})</span>
+                <span className="text-secondary">{item.desc}</span>
               </div>
             ))}
           </div>
 
-          <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
-            📐 规则求值流程
+          <h4 className="guide-section-title-mt">
+            规则求值流程
           </h4>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-            <ol style={{ paddingLeft: '1.2rem' }}>
+          <div className="guide-step">
+            <ol>
               <li><strong>when 条件求值</strong> — 对行程数据 ($trip) 执行 when 表达式，返回 true/false</li>
               <li><strong>score 评分求值</strong> — when 为 true 时，执行 score 表达式计算风险分值 (0~1)</li>
               <li><strong>限幅</strong> — 风险分值限制在 [0, 1] 区间</li>
@@ -560,21 +536,21 @@ function RuleStudio() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 60 }}>ID</th>
+                <th className="w-60">ID</th>
                 <th>名称</th>
-                <th style={{ width: 140 }}>欺诈类型</th>
-                <th style={{ width: 70 }}>严重度</th>
-                <th style={{ width: 80 }}>阈值</th>
-                <th style={{ width: 90 }}>Dry Run</th>
-                <th style={{ width: 90 }}>启用</th>
-                <th style={{ width: 140 }}>更新时间</th>
-                <th style={{ width: 260 }}>操作</th>
+                <th className="w-140">欺诈类型</th>
+                <th className="w-70">严重度</th>
+                <th className="w-80">阈值</th>
+                <th className="w-90">Dry Run</th>
+                <th className="w-90">启用</th>
+                <th className="w-140">更新时间</th>
+                <th className="w-260">操作</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '2rem' }}>
+                  <td colSpan={9} className="text-center p-4">
                     <span className="loading-spinner"></span> 加载中...
                   </td>
                 </tr>
@@ -582,7 +558,7 @@ function RuleStudio() {
                 <tr>
                   <td colSpan={9}>
                     <div className="empty-state">
-                      <div className="empty-state-icon">📋</div>
+                      <div className="empty-state-icon"></div>
                       <div className="empty-state-title">暂无规则</div>
                       <div className="empty-state-text">点击右上角"新建规则"创建第一条检测规则</div>
                     </div>
@@ -600,9 +576,9 @@ function RuleStudio() {
                   <tr key={r.id}>
                     <td><span className="mono">#{r.id}</span></td>
                     <td>
-                      <div style={{ fontWeight: 500 }}>{r.name}</div>
+                      <div className="font-medium">{r.name}</div>
                       {r.description && (
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        <div className="text-xs text-tertiary mt-0p5">
                           {r.description}
                         </div>
                       )}
@@ -616,7 +592,7 @@ function RuleStudio() {
                       <span className={`badge ${sev.color}`}>{sev.label}</span>
                     </td>
                     <td>
-                      <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                      <span className="fw-700 mono">
                         {Number(r.threshold).toFixed(2)}
                       </span>
                     </td>
@@ -631,12 +607,12 @@ function RuleStudio() {
                       </span>
                     </td>
                     <td>
-                      <span className="mono" style={{ fontSize: '0.7rem' }}>
+                      <span className="mono text-xs">
                         {formatTime(r.updated_at)}
                       </span>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <div className="row-tight">
                         <button
                           className={`btn btn-sm ${isExpanded ? 'btn-primary' : 'btn-secondary'}`}
                           onClick={() => setExpandedRule(isExpanded ? null : r.id)}
@@ -677,97 +653,60 @@ function RuleStudio() {
 
                 const detailRow = isExpanded ? (
                   <tr key={`${r.id}-detail`}>
-                    <td colSpan={9} style={{ padding: 0 }}>
-                      <div style={{
-                        background: 'var(--bg-secondary)',
-                        borderTop: '2px solid var(--accent-blue)',
-                        padding: '1rem 1.5rem',
-                        fontSize: '0.8rem'
-                      }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem 2rem' }}>
+                    <td colSpan={9} className="p-0">
+                      <div className="rule-detail-panel">
+                        <div className="rule-detail-grid">
                           <div>
-                            <div style={{ fontWeight: 600, color: 'var(--accent-blue)', marginBottom: 6 }}>
-                              📋 欺诈类型说明
+                            <div className="rule-detail-title">
+                              欺诈类型说明
                             </div>
                             {guide ? (
-                              <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                <div style={{ marginBottom: 4 }}>{guide.desc}</div>
-                                <div style={{ color: 'var(--accent-purple)', fontSize: '0.75rem' }}>
+                              <div className="rule-detail-body">
+                                <div className="mb-1">{guide.desc}</div>
+                                <div className="rule-detail-guide-logic">
                                   {guide.logic}
                                 </div>
-                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.7rem', marginTop: 4 }}>
+                                <div className="rule-detail-guide-fields">
                                   常用字段：{guide.fields.map(f => (
-                                    <code key={f} style={{ background: 'var(--bg-tertiary)', padding: '0 3px', borderRadius: 2, margin: '0 2px' }}>
+                                    <code key={f} className="code-inline">
                                       ${`{trip.${f}}`}
                                     </code>
                                   ))}
                                 </div>
                               </div>
                             ) : (
-                              <div style={{ color: 'var(--text-tertiary)' }}>无说明</div>
+                              <div className="text-tertiary">无说明</div>
                             )}
                           </div>
                           <div>
-                            <div style={{ fontWeight: 600, color: 'var(--accent-blue)', marginBottom: 6 }}>
-                              🔍 规则逻辑解读
+                            <div className="rule-detail-title">
+                              规则逻辑解读
                             </div>
-                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                              <div style={{ marginBottom: 8 }}>
-                                <strong style={{ color: 'var(--text-primary)' }}>触发条件 (when)：</strong>
-                                <pre style={{
-                                  margin: '4px 0',
-                                  padding: '6px 10px',
-                                  background: 'var(--bg-primary)',
-                                  border: '1px solid var(--border-primary)',
-                                  borderRadius: 'var(--radius-sm)',
-                                  fontFamily: 'inherit',
-                                  fontSize: '0.78rem',
-                                  whiteSpace: 'pre-wrap',
-                                  color: 'var(--text-primary)'
-                                }}>
+                            <div className="rule-detail-body-tight">
+                              <div className="mb-2">
+                                <strong className="text-primary">触发条件 (when)：</strong>
+                                <pre className="code-block">
                                   {whenText}
                                 </pre>
                               </div>
                               <div>
-                                <strong style={{ color: 'var(--text-primary)' }}>评分公式 (score)：</strong>
-                                <pre style={{
-                                  margin: '4px 0',
-                                  padding: '6px 10px',
-                                  background: 'var(--bg-primary)',
-                                  border: '1px solid var(--border-primary)',
-                                  borderRadius: 'var(--radius-sm)',
-                                  fontFamily: 'inherit',
-                                  fontSize: '0.78rem',
-                                  whiteSpace: 'pre-wrap',
-                                  color: 'var(--text-primary)'
-                                }}>
+                                <strong className="text-primary">评分公式 (score)：</strong>
+                                <pre className="code-block">
                                   {scoreText}
                                 </pre>
                               </div>
-                              <div style={{ marginTop: 6, fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
+                              <div className="rule-detail-foot">
                                 当评分 ≥ 阈值 ({Number(r.threshold).toFixed(2)}) 时标记为可疑
                                 {r.dry_run ? '（当前为试运行，不写入正式队列）' : '（正式模式，写入可疑队列）'}
                               </div>
                             </div>
                           </div>
                         </div>
-                        <div style={{ marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-primary)' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--accent-blue)', marginBottom: 4, fontSize: '0.78rem' }}>
-                            💻 原始表达式 (JSON)
+                        <div className="rule-detail-divider">
+                          <div className="rule-detail-title-sm">
+                            原始表达式 (JSON)
                           </div>
-                          <pre style={{
-                            margin: 0,
-                            padding: '6px 10px',
-                            background: 'var(--bg-primary)',
-                            border: '1px solid var(--border-primary)',
-                            borderRadius: 'var(--radius-sm)',
-                            fontFamily: 'monospace',
-                            fontSize: '0.72rem',
-                            whiteSpace: 'pre-wrap',
-                            color: 'var(--text-tertiary)',
-                            maxWidth: '100%',
-                            overflow: 'auto'
-                          }}>
+                          <pre className="code-block-json">
                             {typeof r.rule_expr === 'string' ? r.rule_expr : JSON.stringify(r.rule_expr, null, 2)}
                           </pre>
                         </div>
@@ -788,12 +727,12 @@ function RuleStudio() {
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingRule ? `编辑规则 #${editingRule.id}` : '新建规则'}</h3>
-              <button className="btn btn-link btn-sm" onClick={closeForm}>关闭 ✕</button>
+              <button className="btn btn-link btn-sm" onClick={closeForm}>关闭 </button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 <div className="form-row">
-                  <div className="form-group" style={{ flex: 2 }}>
+                  <div className="form-group flex-2">
                     <label>规则名称 *</label>
                     <input
                       type="text"
@@ -804,7 +743,7 @@ function RuleStudio() {
                       required
                     />
                   </div>
-                  <div className="form-group" style={{ flex: 1 }}>
+                  <div className="form-group flex-1">
                     <label>欺诈类型 *</label>
                     <select
                       className="input"
@@ -857,9 +796,9 @@ function RuleStudio() {
                 </div>
 
                 <div className="form-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="flex-row justify-between items-center">
                     <label>规则表达式 (JSON) *</label>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div className="row-tight-6">
                       <button type="button" className="btn btn-sm btn-secondary" onClick={loadExample}>
                         加载示例
                       </button>
@@ -869,11 +808,10 @@ function RuleStudio() {
                     </div>
                   </div>
                   <textarea
-                    className="input"
+                    className="input mono text-0p8"
                     value={form.rule_expr_json}
                     onChange={e => setForm({ ...form, rule_expr_json: e.target.value })}
                     rows={12}
-                    style={{ fontFamily: 'monospace', fontSize: '0.8rem', lineHeight: 1.5 }}
                     spellCheck={false}
                   />
                   <span className="form-hint">
@@ -882,34 +820,34 @@ function RuleStudio() {
                 </div>
 
                 <div className="form-row">
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div className="form-group flex-row items-center gap-2">
                     <input
                       type="checkbox"
                       id="rule-dry-run"
                       checked={form.dry_run === 1}
                       onChange={e => setForm({ ...form, dry_run: e.target.checked ? 1 : 0 })}
                     />
-                    <label htmlFor="rule-dry-run" style={{ marginBottom: 0, cursor: 'pointer' }}>
-                      🧪 试运行 (dry-run，不写入正式可疑队列)
+                    <label htmlFor="rule-dry-run" className="mb-0 cursor-pointer">
+                      试运行 (dry-run，不写入正式可疑队列)
                     </label>
                   </div>
                   {editingRule && (
-                    <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div className="form-group flex-row items-center gap-2">
                       <input
                         type="checkbox"
                         id="rule-enabled"
                         checked={form.enabled === 1}
                         onChange={e => setForm({ ...form, enabled: e.target.checked ? 1 : 0 })}
                       />
-                      <label htmlFor="rule-enabled" style={{ marginBottom: 0, cursor: 'pointer' }}>
-                        ✅ 启用规则
+                      <label htmlFor="rule-enabled" className="mb-0 cursor-pointer">
+                        启用规则
                       </label>
                     </div>
                   )}
                 </div>
 
                 {formError && (
-                  <div className="alert alert-warning" style={{ marginTop: 12 }}>
+                  <div className="alert alert-warning mt-3">
                     {formError}
                   </div>
                 )}

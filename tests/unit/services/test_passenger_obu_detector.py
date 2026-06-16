@@ -143,10 +143,21 @@ class TestPublicServiceResponse:
         mock_ai_client.truck_obu.return_value = _hit_response(is_suspicious=False)
         assert detect_trip(trip) is None
 
-    def test_llm_verified_false_no_hit(self, mock_ai_client):
+    def test_is_suspicious_true_with_llm_unverified_hits(self, mock_ai_client):
+        """is_suspicious=True 即使 llm_verified=False(ML 高自信不调 LLM)也命中。
+
+        背景:AI service 在 ML 高度自信(>= 0.85)时不调 LLM,llm_verified 留 False。
+        我方应以 is_suspicious 为准,不能把 llm_verified 当硬门坎。
+        """
         trip = _base_trip()
-        mock_ai_client.truck_obu.return_value = _hit_response(llm_verified=False, is_suspicious=True)
-        assert detect_trip(trip) is None
+        mock_ai_client.truck_obu.return_value = _hit_response(
+            llm_verified=False, is_suspicious=True,
+        )
+        result = detect_trip(trip)
+        assert result is not None
+        assert result['source_side'] == 'ENTRY'
+        # 仍把 llm_verified 透传给调用方,作为审计 metadata
+        assert result['llm_verified'] is False
 
     def test_exception_in_service_no_hit(self, mock_ai_client):
         trip = _base_trip()
@@ -238,8 +249,10 @@ class TestDualSideHit:
         # 入口和出口都调了一次
         assert mock_ai_client.truck_obu.call_count == 2
 
-    def test_both_hit_but_one_llm_unverified(self, mock_ai_client):
-        """双侧都 is_suspicious=True,但只有一侧 llm_verified → llm_verified=False"""
+    def test_both_hit_with_one_llm_unverified(self, mock_ai_client):
+        """双侧 is_suspicious=True(其中一侧 llm_verified=False)→ 双侧命中,
+        detector 层的 llm_verified 取 AND → 整体 llm_verified=False。
+        """
         trip = _base_trip(
             exit_vehicle_type=1,
             exit_vehicle_id='川A12345',
@@ -247,18 +260,17 @@ class TestDualSideHit:
             exit_obu_id='OBU002',
             exit_media_type=1,
         )
-        # 第一次(入口)命中且 llm_verified, 第二次(出口)命中但 llm_verified=False
         mock_ai_client.truck_obu.side_effect = [
             _hit_response(llm_verified=True, llm_confidence=0.95),
             _hit_response(llm_verified=False, llm_confidence=0.80, is_suspicious=True),
         ]
         result = detect_trip(trip)
 
-        # llm_verified=False 会在单侧_check 中被过滤 → 出口不命中
-        # 所以结果应该是单侧 ENTRY
+        # 双侧都命中(都不再被 llm_verified 过滤)
         assert result is not None
-        assert result['source_side'] == 'ENTRY'
-        assert result['llm_verified'] is True
+        assert result['source_side'] == 'BOTH'
+        # 整体 llm_verified = True AND False = False
+        assert result['llm_verified'] is False
         assert mock_ai_client.truck_obu.call_count == 2
 
 

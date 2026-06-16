@@ -7,8 +7,12 @@
     让侧车在分档裁决器中尽量绕开 LLM 调用。
 - VehicleAIClient.entry_exit(entry_url, exit_url)
     出入口车辆比对
+- VehicleAIClient.classify_truck(image_url)
+    纯 ML 视觉车型分类(无 LLM),客车 OBU 监测的第一步
+- VehicleAIClient.llm_verify_truck(image_url, ml_is_truck, ml_confidence)
+    LLM 二次复核,客车 OBU 监测的第二步(只在 ML 判是货车时调用)
 - VehicleAIClient.truck_obu(image_url, declared_vehicle_type=1)
-    货车套用客车OBU检测
+    货车套用客车OBU检测(复合端点,旧路径兼容)
 - VehicleAIClient.recognize_plate(image_url)
     车牌 OCR 识别
 """
@@ -171,10 +175,43 @@ class VehicleAIClient:
         *,
         declared_vehicle_type: int = 1,
     ) -> Dict[str, Any]:
-        """货车套用客车OBU检测 — 判断客车记录的图片是否实为货车。"""
+        """货车套用客车OBU检测 — 判断客车记录的图片是否实为货车。
+
+        复合端点(ML+LLM),旧路径兼容。新代码请优先用 ``classify_truck`` +
+        ``llm_verify_truck`` 两步调用,避免 ML 高自信时漏调 LLM 的旧 BUG。
+        """
         return self._post('/api/v1/vehicle/truck-obu', {
             'image_url': image_url,
             'declared_vehicle_type': declared_vehicle_type,
+        })
+
+    def classify_truck(self, image_url: str) -> Dict[str, Any]:
+        """纯 ML 视觉车型分类 — 第一步,失败/拒收一律返回 ``is_truck=False``。
+
+        端点契约:不抛 5xx。返回字段 ``is_truck`` / ``confidence`` /
+        ``visual_vehicle_type``。``is_truck=False`` 时调用方无需再调 LLM。
+        """
+        return self._post('/api/v1/vehicle/classify-truck', {
+            'image_url': image_url,
+        })
+
+    def llm_verify_truck(
+        self,
+        image_url: str,
+        *,
+        ml_is_truck: bool,
+        ml_confidence: float,
+    ) -> Dict[str, Any]:
+        """LLM 二次复核 — 第二步,仅在 classify_truck 返回 is_truck=True 时调用。
+
+        返回字段 ``is_truck`` (Optional[bool]) / ``confidence`` / ``llm_verified``
+        / ``llm_reason`` / ``llm_error``。``llm_verified=False`` 时一律 drop,
+        无论 ``llm_error='maas_unavailable'``(MaaS 抖动)还是其他原因。
+        """
+        return self._post('/api/v1/vehicle/llm-verify-truck', {
+            'image_url': image_url,
+            'ml_is_truck': ml_is_truck,
+            'ml_confidence': ml_confidence,
         })
 
 

@@ -6,30 +6,30 @@ const TASK_TYPES = {
   detect_only: '仅检测',
   multi_detect: '多维度检测',
   re_detect: '补检测',
-  passenger_obu_audit: '🚗 客车OBU监测',
-  llm_verify: '🧠 AI 二次复核'
+  passenger_obu_audit: '客车OBU监测',
+  llm_verify: 'AI 二次复核'
 }
 
 const FRAUD_TYPE_LABEL = {
-  PASSENGER_USES_TRUCK_OBU_NON_NEW_A: '🚗 客套货OBU',
-  TRUCK_AS_CAR: '🚛 货套客',
-  ENTRY_EXIT_MISMATCH: '🚗 出入口',
-  GATEWAY_ANOMALY: '🛣️ 门架异常',
-  VEHICLE_TYPE_DOWNGRADE: '🔻 大车小标',
-  SAME_PLATE_DIFF_VEHICLE: '🎭 同牌不同车',
-  OBU_UNBIND: '🔁 OBU 借用',
-  OBU_SHIELD: '🛡️ OBU 屏蔽'
+  PASSENGER_USES_TRUCK_OBU_NON_NEW_A: '客套货OBU',
+  TRUCK_AS_CAR: '货套客',
+  ENTRY_EXIT_MISMATCH: '出入口',
+  GATEWAY_ANOMALY: '门架异常',
+  VEHICLE_TYPE_DOWNGRADE: '大车小标',
+  SAME_PLATE_DIFF_VEHICLE: '同牌不同车',
+  OBU_UNBIND: 'OBU 借用',
+  OBU_SHIELD: 'OBU 屏蔽'
 }
 
 const FRAUD_TYPE_FILTER_OPTIONS = [
-  { value: 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A', label: '🚗 客套货OBU' },
-  { value: 'TRUCK_AS_CAR', label: '🚛 货套客' },
-  { value: 'ENTRY_EXIT_MISMATCH', label: '🚗 出入口' },
-  { value: 'GATEWAY_ANOMALY', label: '🛣️ 门架异常' },
-  { value: 'VEHICLE_TYPE_DOWNGRADE', label: '🔻 大车小标' },
-  { value: 'SAME_PLATE_DIFF_VEHICLE', label: '🎭 同牌不同车' },
-  { value: 'OBU_UNBIND', label: '🔁 OBU 借用' },
-  { value: 'OBU_SHIELD', label: '🛡️ OBU 屏蔽' }
+  { value: 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A', label: '客套货OBU' },
+  { value: 'TRUCK_AS_CAR', label: '货套客' },
+  { value: 'ENTRY_EXIT_MISMATCH', label: '出入口' },
+  { value: 'GATEWAY_ANOMALY', label: '门架异常' },
+  { value: 'VEHICLE_TYPE_DOWNGRADE', label: '大车小标' },
+  { value: 'SAME_PLATE_DIFF_VEHICLE', label: '同牌不同车' },
+  { value: 'OBU_UNBIND', label: 'OBU 借用' },
+  { value: 'OBU_SHIELD', label: 'OBU 屏蔽' }
 ]
 
 function TaskManager() {
@@ -341,8 +341,8 @@ function TaskManager() {
                   <option value="detect_only">仅检测</option>
                   <option value="multi_detect">多维度检测（规则引擎+多 detector）</option>
                   <option value="re_detect">补检测</option>
-                  <option value="passenger_obu_audit">🚗 客车OBU监测（元数据+图片+LLM）</option>
-                  <option value="llm_verify">🧠 AI 二次复核</option>
+                  <option value="passenger_obu_audit">客车OBU监测（元数据+图片+LLM）</option>
+                  <option value="llm_verify">AI 二次复核</option>
                 </select>
               </div>
 
@@ -573,7 +573,7 @@ function TaskManager() {
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>执行详情 #{detailExec.id}</h3>
-              <button className="btn btn-link btn-sm" onClick={closeDetail}>关闭 ✕</button>
+              <button className="btn btn-link btn-sm" onClick={closeDetail}>关闭 </button>
             </div>
             <div className="modal-body">
               {detailLoading && <div className="loading">加载中...</div>}
@@ -582,7 +582,7 @@ function TaskManager() {
                 <span className={`status-badge status-${detailExec.status}`}>
                   {detailExec.status === 'completed' ? '已完成' : detailExec.status === 'running' ? '运行中' : detailExec.status === 'failed' ? '失败' : detailExec.status}
                 </span>
-                {detailExec.status === 'running' && <span className="text-secondary" style={{ marginLeft: 8 }}>(自动刷新中)</span>}
+                {detailExec.status === 'running' && <span className="text-secondary ml-2">(自动刷新中)</span>}
               </div>
               <div className="detail-row">
                 <span className="detail-label">开始</span><span>{formatTime(detailExec.started_at)}</span>

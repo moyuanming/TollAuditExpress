@@ -375,3 +375,129 @@ def get_trip_detail(passid: str) -> Optional[Dict[str, Any]]:
         'gantry_image_records': serialize_gantry_image_records(gantry_images),
     }
     return detail
+
+
+# ---- 客车 OBU 监测候选筛选（直接查 t_waste_en_ex_gantry）----
+
+
+def find_passenger_obu_candidates_doris(
+    start_time: str,
+    end_time: str,
+    plate_prefix_exclude: str = '新A',
+    declared_vehicle_type: int = 1,
+    media_type: int = 1,
+    limit: int = 500,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """从 Doris 原始表筛选客车 OBU 候选行程（两步 CTE）。
+
+    Step 1: 找 PASSID — VEHICLETYPE=1, MEDIATYPE=1, VEHICLEID NOT LIKE '新A%'
+    Step 2: 取入口/出口详情 + JOIN 站点字典拿 IPADDRESS 构造图片 URL
+
+    返回与 detect_trip 兼容的 dict 列表。
+    """
+    if not HAS_PYMYSQL:
+        return []
+
+    prefix = f"{plate_prefix_exclude}%"
+    sql = """
+    WITH candidate_passids AS (
+        SELECT t.PASSID
+        FROM dwd_tolldata.t_waste_en_ex_gantry t
+        WHERE t.VEHICLETYPE = %s
+          AND t.MEDIATYPE = %s
+          AND t.VEHICLEID IS NOT NULL
+          AND t.VEHICLEID NOT LIKE %s
+          AND t.LANETYPE IN ('入口', '出口')
+          AND t.OCCURTIME >= %s
+          AND t.OCCURTIME < %s
+        GROUP BY t.PASSID
+        ORDER BY MAX(t.OCCURTIME) ASC
+        LIMIT %s OFFSET %s
+    ),
+    entry_exit AS (
+        SELECT t.PASSID, t.LANETYPE, t.VEHICLETYPE, t.VEHICLEID, t.VEHICLECOLOR,
+               t.OBUID, t.MEDIATYPE, t.STATION_NAME, t.LANE_ID,
+               t.OCCURTIME, t.ID, t.STATION_ID,
+               d.IPADDRESS
+        FROM dwd_tolldata.t_waste_en_ex_gantry t
+        LEFT JOIN dwd_tolldata.t_md_tollstationdic d ON d.ID = t.STATION_ID
+        WHERE t.PASSID IN (SELECT PASSID FROM candidate_passids)
+          AND t.LANETYPE IN ('入口', '出口')
+        ORDER BY t.PASSID, t.LANETYPE
+    )
+    SELECT * FROM entry_exit
+    """
+    params = [
+        declared_vehicle_type, media_type, prefix,
+        start_time, end_time, limit, offset,
+    ]
+
+    conn = pymysql.connect(**DB_CONFIG)
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        try:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+    finally:
+        conn.close()
+
+    return _rows_to_candidate_trips(rows)
+
+
+def _rows_to_candidate_trips(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """将 Doris 扁平 entry/exit 行按 PASSID 分组为 detect_trip 兼容的 dict。"""
+    from collections import defaultdict
+
+    by_passid: Dict[str, List[Dict]] = defaultdict(list)
+    for r in rows:
+        by_passid[r['PASSID']].append(r)
+
+    trips = []
+    for passid, records in by_passid.items():
+        entry = next((r for r in records if r['LANETYPE'] == '入口'), None)
+        exit_rec = next((r for r in records if r['LANETYPE'] == '出口'), None)
+        if not entry and not exit_rec:
+            continue
+
+        def _fmt_time(r):
+            if not r:
+                return None
+            t = r.get('OCCURTIME')
+            if isinstance(t, datetime):
+                return t.isoformat()
+            return str(t) if t else None
+
+        def _img(r, suffix):
+            if not r or not r.get('IPADDRESS'):
+                return None
+            return build_image_url(r, suffix)
+
+        trips.append({
+            'passid': passid,
+            'entry_time': _fmt_time(entry),
+            'entry_station_name': entry.get('STATION_NAME') if entry else None,
+            'entry_lane_id': entry.get('LANE_ID') if entry else None,
+            'entry_vehicle_id': entry.get('VEHICLEID') if entry else None,
+            'entry_vehicle_type': entry.get('VEHICLETYPE') if entry else None,
+            'entry_vehicle_color': entry.get('VEHICLECOLOR') if entry else None,
+            'entry_obu_id': entry.get('OBUID') if entry else None,
+            'entry_media_type': entry.get('MEDIATYPE') if entry else None,
+            'entry_image_trans': _img(entry, '_trans.jpg'),
+            'entry_image_license': _img(entry, '_license.jpg'),
+            'entry_visual_type': None,
+            'exit_time': _fmt_time(exit_rec),
+            'exit_station_name': exit_rec.get('STATION_NAME') if exit_rec else None,
+            'exit_lane_id': exit_rec.get('LANE_ID') if exit_rec else None,
+            'exit_vehicle_id': exit_rec.get('VEHICLEID') if exit_rec else None,
+            'exit_vehicle_type': exit_rec.get('VEHICLETYPE') if exit_rec else None,
+            'exit_vehicle_color': exit_rec.get('VEHICLECOLOR') if exit_rec else None,
+            'exit_obu_id': exit_rec.get('OBUID') if exit_rec else None,
+            'exit_media_type': exit_rec.get('MEDIATYPE') if exit_rec else None,
+            'exit_image_trans': _img(exit_rec, '_trans.jpg'),
+            'exit_image_license': _img(exit_rec, '_license.jpg'),
+            'exit_visual_type': None,
+        })
+    return trips

@@ -49,11 +49,11 @@ export function DecisionTable({ suspect }) {
   const points = buildDecisionSummary(suspect)
   if (points.length === 0) return null
   return (
-    <table className="table" style={{ fontSize: '0.8rem' }}>
+    <table className="table text-0p8">
       <tbody>
         {points.map((p, i) => (
           <tr key={i}>
-            <td style={{ width: '40%', color: 'var(--text-secondary)' }}>{p.label}</td>
+            <td className="colgroup-w-40 text-secondary">{p.label}</td>
             <td>
               <span className={`result-tag ${p.status}`}>{p.value}</span>
             </td>
@@ -65,22 +65,13 @@ export function DecisionTable({ suspect }) {
 }
 
 export function JsonView({ data }) {
-  if (!data) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+  if (!data) return <span className="text-tertiary">—</span>
   let obj = data
   if (typeof data === 'string') {
-    try { obj = JSON.parse(data) } catch (e) { return <pre style={{ fontSize: '0.75rem', whiteSpace: 'pre-wrap' }}>{data}</pre> }
+    try { obj = JSON.parse(data) } catch (e) { return <pre className="code-block-json">{data}</pre> }
   }
   return (
-    <pre style={{
-      fontSize: '0.75rem',
-      background: 'var(--bg-secondary)',
-      padding: '0.5rem',
-      borderRadius: 4,
-      maxHeight: 200,
-      overflow: 'auto',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-all'
-    }}>
+    <pre className="code-block-json">
       {JSON.stringify(obj, null, 2)}
     </pre>
   )

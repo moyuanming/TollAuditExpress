@@ -1,0 +1,40 @@
+/* ECharts 容器样式 (Design.md: 大圆角 / 轻阴影 / 浅色卡片) */
+.chart-card {
+  background: var(--color-bg-surface-card);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--shadow-card);
+}
+
+.chart-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.chart-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.chart-card-body {
+  min-height: 280px;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 880px) {
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
+}

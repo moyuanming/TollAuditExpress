@@ -14,8 +14,8 @@ export default function GantryImageTimeline({ records }) {
   if (items.length === 0) {
     return (
       <div className="detail-section">
-        <div className="detail-section-title">📸 门架图片流水</div>
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+        <div className="detail-section-title">门架图片流水</div>
+        <div className="text-sm text-tertiary">
           暂无抓拍图片记录
         </div>
       </div>
@@ -25,39 +25,19 @@ export default function GantryImageTimeline({ records }) {
   return (
     <div className="detail-section">
       <div className="detail-section-title">
-        📸 门架图片流水（{items.length} 张）
+        门架图片流水（{items.length} 张）
       </div>
-      <div style={{
-        position: 'relative',
-        paddingLeft: 16,
-        borderLeft: '2px solid var(--accent-purple)',
-        marginLeft: 8
-      }}>
+      <div className="gt-track gt-track-purple">
         {items.map((g, i) => (
-          <div key={i} style={{
-            position: 'relative',
-            paddingLeft: 12,
-            marginBottom: 12,
-            paddingBottom: 12,
-            borderBottom: i < items.length - 1 ? '1px dashed var(--border-primary)' : 'none'
-          }}>
-            <div style={{
-              position: 'absolute',
-              left: -22,
-              top: 4,
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              background: 'var(--accent-purple)',
-              border: '2px solid var(--bg-primary)'
-            }} />
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginBottom: 4 }}>
+          <div key={i} className="gt-item">
+            <div className="gt-dot gt-dot-purple" />
+            <div className="text-xs text-tertiary mb-1">
               {formatTime(g.occur_time)}
             </div>
-            <div style={{ fontSize: '0.8rem', fontWeight: 500, marginBottom: 4 }}>
+            <div className="text-0p8 fw-500 mb-1">
               {g.station_name || '未知门架'}
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
+            <div className="text-xs text-secondary mb-1p5">
               {g.vehicle_id || '?'} (色:{g.vehicle_color ?? '?'})
             </div>
             {g.image_url ? (
@@ -73,7 +53,7 @@ export default function GantryImageTimeline({ records }) {
                 }}
               />
             ) : (
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>无抓拍图</div>
+              <div className="text-xs text-tertiary">无抓拍图</div>
             )}
           </div>
         ))}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { auditApi } from '../api/audit'
 import SmartImage from '../components/SmartImage'
+import Icon from '../components/Icon'
 
 function TripQuery() {
   const [activeModel, setActiveModel] = useState('modelA')
@@ -102,13 +103,7 @@ function TripQuery() {
         return trip.entry_vehicle_id || '-'
       case 'entry_type':
         return (
-          <span style={{
-            padding: '0.2rem 0.5rem',
-            borderRadius: 4,
-            fontSize: '0.75rem',
-            background: trip.entry_vehicle_type === 1 ? 'var(--accent-green-bg)' : 'var(--accent-amber-bg)',
-            color: trip.entry_vehicle_type === 1 ? 'var(--accent-green)' : 'var(--accent-amber)'
-          }}>
+          <span className={`pill text-0p75 ${trip.entry_vehicle_type === 1 ? 'pill-bus' : 'pill-truck'}`}>
             {trip.entry_vehicle_type === 1 ? '客车' : '货车'}
           </span>
         )
@@ -124,17 +119,12 @@ function TripQuery() {
             />
           )
         }
-        return <span style={{color: 'var(--text-tertiary)'}}>无</span>
+        return <span className="text-tertiary">无</span>
       case 'visual_type':
         const visType = trip.entry_visual_type
+        const visPillCls = visType === 'truck' ? 'pill-vis-truck' : visType === 'car' ? 'pill-vis-bus' : 'pill-vis-other'
         return (
-          <span style={{
-            padding: '0.2rem 0.5rem',
-            borderRadius: 4,
-            fontSize: '0.75rem',
-            background: visType === 'truck' ? 'var(--accent-red-bg)' : visType === 'car' ? 'var(--accent-green-bg)' : 'var(--bg-tertiary)',
-            color: visType === 'truck' ? 'var(--accent-red)' : visType === 'car' ? 'var(--accent-green)' : 'var(--text-secondary)'
-          }}>
+          <span className={`pill text-0p75 ${visPillCls}`}>
             {visType === 'truck' ? '货车(视觉)' : visType === 'car' ? '客车(视觉)' : '-'}
           </span>
         )
@@ -183,29 +173,29 @@ function TripQuery() {
             <SmartImage
               imageUrl={trip.entry_image_license}
               alt="entry"
-              style={{ width: 60, height: 45, aspectRatio: '4/3' }}
+              className="frame-thumb"
             />
           )
         }
-        return <span style={{color: 'var(--text-tertiary)'}}>无</span>
+        return <span className="text-tertiary">无</span>
       case 'exit_image':
         if (trip.exit_image_license) {
           return (
             <SmartImage
               imageUrl={trip.exit_image_license}
               alt="exit"
-              style={{ width: 60, height: 45, aspectRatio: '4/3' }}
+              className="frame-thumb"
             />
           )
         }
-        return <span style={{color: 'var(--text-tertiary)'}}>无</span>
+        return <span className="text-tertiary">无</span>
       case 'fingerprint_sim':
         const sim = trip.fingerprint_sim || 0
         return (
-          <span style={{
-            fontWeight: 600,
-            color: sim < 0.6 ? 'var(--accent-red)' : sim < 0.8 ? 'var(--accent-amber)' : 'var(--accent-green)'
-          }}>
+          <span
+            className="font-bold"
+            data-risk={sim < 0.6 ? 'high' : sim < 0.8 ? 'medium' : 'low'}
+          >
             {(sim * 100).toFixed(0)}%
           </span>
         )
@@ -233,7 +223,7 @@ function TripQuery() {
         </div>
         <div className="stats-strip">
           <div className="stat-mini">
-            <span className="stat-mini-icon">📊</span>
+            <span className="stat-mini-icon"></span>
             <div className="stat-mini-content">
               <span className="stat-mini-value">{total}</span>
               <span className="stat-mini-label">总记录数</span>
@@ -247,7 +237,7 @@ function TripQuery() {
             </div>
           </div>
           <div className="stat-mini">
-            <span className="stat-mini-icon">⚠️</span>
+            <span className="stat-mini-icon"></span>
             <div className="stat-mini-content">
               <span className="stat-mini-value">{trips.filter(t => t.audit_status === 'SUSPECTED').length}</span>
               <span className="stat-mini-label">可疑</span>
@@ -261,13 +251,13 @@ function TripQuery() {
           className={`model-tab model-a ${activeModel === 'modelA' ? 'active' : ''}`}
           onClick={() => { setActiveModel('modelA'); setPage(0) }}
         >
-          🚛 模型A: 货车套用客车OBU
+          <Icon name="bus" /> 模型A: 货车套用客车OBU
         </button>
-        <button 
+        <button
           className={`model-tab model-b ${activeModel === 'modelB' ? 'active' : ''}`}
           onClick={() => { setActiveModel('modelB'); setPage(0) }}
         >
-          🚗 模型B: 出入口车辆比对
+          <Icon name="route" /> 模型B: 出入口车辆比对
         </button>
       </div>
 
@@ -326,13 +316,13 @@ function TripQuery() {
           </>
         )}
         <button className="btn btn-primary" onClick={searchTrips}>
-          🔍 搜索
+          搜索
         </button>
         <button className="btn btn-secondary" onClick={() => {
           setFilters({passid: '', status: '', entry_station: '', exit_station: '', start_time: '', end_time: ''})
           searchTrips()
         }}>
-          🔄 重置
+          重置
         </button>
       </div>
 
@@ -350,7 +340,7 @@ function TripQuery() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={columns.length} style={{textAlign: 'center', padding: '2rem'}}>
+                    <td colSpan={columns.length} className="text-center p-4">
                       <span className="loading-spinner"></span> 加载中...
                     </td>
                   </tr>
@@ -358,7 +348,7 @@ function TripQuery() {
                   <tr>
                     <td colSpan={columns.length}>
                       <div className="empty-state">
-                        <div className="empty-state-icon">🚗</div>
+                        <div className="empty-state-icon"><Icon name="route" size="xl" /></div>
                         <div className="empty-state-title">暂无数据</div>
                         <div className="empty-state-text">请先在仪表盘启动数据聚合任务</div>
                       </div>
@@ -366,7 +356,7 @@ function TripQuery() {
                   </tr>
                 ) : (
                   trips.map((trip, idx) => (
-                    <tr key={trip.id || idx} onClick={() => viewDetail(trip)} style={{cursor: 'pointer'}}>
+                    <tr key={trip.id || idx} onClick={() => viewDetail(trip)} className="cursor-pointer">
                       {columns.map(col => (
                         <td key={col.key}>
                           {activeModel === 'modelA' 
@@ -408,8 +398,8 @@ function TripQuery() {
         {selectedTrip && (
           <div className="detail-panel">
             <div className="detail-header">
-              <span className="detail-title">📋 行程详情</span>
-              <button className="detail-close" onClick={() => setSelectedTrip(null)}>✕</button>
+              <span className="detail-title">行程详情</span>
+              <button className="detail-close" onClick={() => setSelectedTrip(null)}></button>
             </div>
             <div className="detail-body">
               <div className="detail-section">
@@ -476,17 +466,17 @@ function TripQuery() {
 
               {activeModel === 'modelA' && (
                 <div className="detail-section">
-                  <div className="detail-section-title">🚛 模型A: 货车套用OBU检测</div>
-                  <div style={{marginTop: '1rem'}}>
-                    <div className="detail-label" style={{marginBottom: '0.5rem'}}>入口车辆图片 (_trans.jpg)</div>
+                  <div className="detail-section-title"><Icon name="bus" />模型A: 货车套用OBU检测</div>
+                  <div className="mt-4">
+                    <div className="detail-label mb-2">入口车辆图片 (_trans.jpg)</div>
                     {selectedTrip.entry_image_trans ? (
                       <SmartImage
                         imageUrl={selectedTrip.entry_image_trans}
                         alt="entry vehicle"
-                        style={{width: '100%', aspectRatio: '4/3', border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)'}}
+                        className="frame-4-3"
                       />
                     ) : (
-                      <div style={{padding: '2rem', textAlign: 'center', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)'}}>
+                      <div className="empty-state bg-code rounded-md">
                         无图片
                       </div>
                     )}
@@ -496,9 +486,9 @@ function TripQuery() {
 
               {activeModel === 'modelB' && (
                 <div className="detail-section">
-                  <div className="detail-section-title">🚗 模型B: 出入口比对</div>
-                  <div style={{marginTop: '1rem'}}>
-                    <div className="detail-label" style={{marginBottom: '0.5rem'}}>出入口图片对比 (_license.jpg)</div>
+                  <div className="detail-section-title"><Icon name="route" />模型B: 出入口比对</div>
+                  <div className="mt-4">
+                    <div className="detail-label mb-2">出入口图片对比 (_license.jpg)</div>
                     <div className="image-compare">
                       <div className="image-compare-item">
                         <div className="image-compare-label">入口</div>
@@ -506,10 +496,10 @@ function TripQuery() {
                           <SmartImage
                             imageUrl={selectedTrip.entry_image_license}
                             alt="entry"
-                            style={{ aspectRatio: '4/3', width: '100%' }}
+                            className="frame-4-3"
                           />
                         ) : (
-                          <div className="image-compare-img" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)'}}>
+                          <div className="image-compare-img flex-row items-center justify-center text-tertiary">
                             无图片
                           </div>
                         )}
@@ -520,10 +510,10 @@ function TripQuery() {
                           <SmartImage
                             imageUrl={selectedTrip.exit_image_license}
                             alt="exit"
-                            style={{ aspectRatio: '4/3', width: '100%' }}
+                            className="frame-4-3"
                           />
                         ) : (
-                          <div className="image-compare-img" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)'}}>
+                          <div className="image-compare-img flex-row items-center justify-center text-tertiary">
                             无图片
                           </div>
                         )}
@@ -535,20 +525,17 @@ function TripQuery() {
 
               <div className="detail-section">
                 <div className="detail-section-title">风险评分</div>
-                <div style={{
-                  padding: '1rem',
-                  background: (selectedTrip.risk_score || 0) > 0.5 ? 'var(--accent-red-bg)' : 'var(--accent-green-bg)',
-                  borderRadius: 'var(--radius-md)',
-                  textAlign: 'center'
-                }}>
-                  <div style={{
-                    fontSize: '2rem',
-                    fontWeight: 700,
-                    color: (selectedTrip.risk_score || 0) > 0.5 ? 'var(--accent-red)' : 'var(--accent-green)'
-                  }}>
+                <div
+                  className="p-3 rounded-md text-center"
+                  data-risk={selectedTrip.risk_score > 0.5 ? 'high-bg' : 'low-bg'}
+                >
+                  <div
+                    className="text-1p25 fw-700"
+                    data-risk={selectedTrip.risk_score > 0.5 ? 'high' : 'low'}
+                  >
                     {((selectedTrip.risk_score || 0) * 100).toFixed(1)}%
                   </div>
-                  <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem'}}>
+                  <div className="text-sm text-secondary mt-1">
                     {(selectedTrip.risk_score || 0) > 0.5 ? '高风险' : (selectedTrip.risk_score || 0) > 0.2 ? '中风险' : '低风险'}
                   </div>
                 </div>

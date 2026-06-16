@@ -36,12 +36,31 @@ npm-debug.log*
 
 # Python cache
 .ruff_cache/
+*.egg-info/
+.venv/
+venv/
 
 # Environment (strengthen)
 .env.*
 !.env.example
+!deploy.config.env.example
 
 # 部署本地配置 & 产物
 deploy.config.env
 build_temp/
 *.tar.gz
+
+# Test / Coverage
+.coverage
+htmlcov/
+coverage/
+
+# Vite cache
+.vite/
+
+# Claude / AI tooling
+.claude/
+.superpowers/
+
+# Large binary assets (use Git LFS or external storage)
+landing-page-hero.png

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { auditApi } from '../api/audit'
 import VehicleTripDetail from '../components/VehicleTripDetail'
 import { formatTime } from '../components/tripDetailUtils'
+import Icon from '../components/Icon'
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 200]
 
@@ -195,14 +196,14 @@ function VehicleQuery() {
         </div>
         <div className="stats-strip">
           <div className="stat-mini">
-            <span className="stat-mini-icon">📊</span>
+            <span className="stat-mini-icon"></span>
             <div className="stat-mini-content">
               <span className="stat-mini-value">{total}</span>
               <span className="stat-mini-label">命中数</span>
             </div>
           </div>
           <div className="stat-mini">
-            <span className="stat-mini-icon">🛣️</span>
+            <span className="stat-mini-icon"><Icon name="git-branch" /></span>
             <div className="stat-mini-content">
               <span className="stat-mini-value">{stats.withGantries}</span>
               <span className="stat-mini-label">含门架数</span>
@@ -212,15 +213,14 @@ function VehicleQuery() {
       </div>
 
       <div className="filter-section">
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', width: '100%' }}>
+        <div className="row flex-wrap w-100 gap-3">
           <div className="filter-group">
             <span className="filter-label">车牌:</span>
             <input
-              className="filter-select"
+              className="filter-select min-w-140"
               placeholder="如 川A00001"
               value={filters.vehicle_id}
               onChange={(e) => setFilters({ ...filters, vehicle_id: e.target.value })}
-              style={{ minWidth: 140 }}
             />
           </div>
           <div className="filter-group">
@@ -238,11 +238,10 @@ function VehicleQuery() {
           <div className="filter-group">
             <span className="filter-label">OBU ID:</span>
             <input
-              className="filter-select"
+              className="filter-select min-w-140"
               placeholder="OBU编号"
               value={filters.obu_id}
               onChange={(e) => setFilters({ ...filters, obu_id: e.target.value })}
-              style={{ minWidth: 140 }}
             />
           </div>
           <div className="filter-group">
@@ -289,16 +288,15 @@ function VehicleQuery() {
             />
           </div>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', width: '100%', marginTop: '0.5rem', alignItems: 'center' }}>
+        <div className="row flex-wrap w-100 gap-3 mt-2 items-center">
           <div className="filter-group">
             <span className="filter-label">日期:</span>
             {['today', 'last7', 'last30', 'custom'].map(p => (
               <button
                 key={p}
                 type="button"
-                className={`btn btn-sm ${filters.date_preset === p ? 'btn-primary' : 'btn-secondary'}`}
+                className={`btn btn-sm mr-1 ${filters.date_preset === p ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setDatePreset(p)}
-                style={{ marginRight: 4, padding: '0.2rem 0.6rem', fontSize: '0.75rem' }}
               >
                 {p === 'today' ? '今天' : p === 'last7' ? '近7天' : p === 'last30' ? '近30天' : '自定义'}
               </button>
@@ -311,7 +309,7 @@ function VehicleQuery() {
               value={filters.start_time}
               onChange={(e) => setFilters({ ...filters, start_time: e.target.value, date_preset: 'custom' })}
             />
-            <span style={{ margin: '0 0.25rem', color: 'var(--text-tertiary)' }}>~</span>
+            <span className="mx-1 muted">~</span>
             <input
               type="date"
               className="filter-select"
@@ -323,14 +321,14 @@ function VehicleQuery() {
             <span className="filter-label">门架数:</span>
             <input
               type="number" min="0" step="1"
-              className="filter-select" style={{ width: 70 }}
+              className="filter-select w-70"
               placeholder="min" value={filters.min_gantry_count}
               onChange={(e) => setFilters({ ...filters, min_gantry_count: e.target.value })}
             />
-            <span style={{ margin: '0 0.25rem', color: 'var(--text-tertiary)' }}>~</span>
+            <span className="mx-1 muted">~</span>
             <input
               type="number" min="0" step="1"
-              className="filter-select" style={{ width: 70 }}
+              className="filter-select w-70"
               placeholder="max" value={filters.max_gantry_count}
               onChange={(e) => setFilters({ ...filters, max_gantry_count: e.target.value })}
             />
@@ -347,31 +345,30 @@ function VehicleQuery() {
               <option value="gantry_count">门架数</option>
             </select>
             <select
-              className="filter-select"
+              className="filter-select ml-1"
               value={filters.order}
               onChange={(e) => { setFilters({ ...filters, order: e.target.value }); setPage(0); setTimeout(loadTrips, 0) }}
-              style={{ marginLeft: 4 }}
             >
               <option value="desc">降序</option>
               <option value="asc">升序</option>
             </select>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <div className="ml-auto row gap-1p5">
             <button className="btn btn-primary" onClick={search} disabled={loading}>
-              🔍 搜索
+              搜索
             </button>
             <button className="btn btn-secondary" onClick={reset} disabled={loading}>
-              🔄 重置
+              重置
             </button>
             <button className="btn btn-secondary" onClick={exportCSV} disabled={loading || trips.length === 0}>
-              📥 导出 CSV
+              导出 CSV
             </button>
           </div>
         </div>
       </div>
 
       {error && (
-        <div className="alert alert-error" style={{ marginBottom: 12 }}>
+        <div className="alert alert-error mb-3">
           加载失败：{error} <button className="btn btn-sm btn-secondary" onClick={loadTrips}>重试</button>
         </div>
       )}
@@ -382,19 +379,19 @@ function VehicleQuery() {
             <table className="table">
               <thead>
                 <tr>
-                  <th style={{width: '120px'}}>PASSID</th>
-                  <th style={{width: '90px'}}>入口车牌</th>
-                  <th style={{width: '80px'}}>入口站</th>
-                  <th style={{width: '130px', cursor: 'pointer'}} onClick={() => toggleSort('entry_time')}>
+                  <th className="w-120">PASSID</th>
+                  <th className="w-90">入口车牌</th>
+                  <th className="w-80">入口站</th>
+                  <th className="col-time-lg cursor-pointer" onClick={() => toggleSort('entry_time')}>
                     入口时间{sortIndicator('entry_time')}
                   </th>
-                  <th style={{width: '90px'}}>出口车牌</th>
-                  <th style={{width: '80px'}}>出口站</th>
-                  <th style={{width: '130px', cursor: 'pointer'}} onClick={() => toggleSort('exit_time')}>
+                  <th className="w-90">出口车牌</th>
+                  <th className="w-80">出口站</th>
+                  <th className="col-time-lg cursor-pointer" onClick={() => toggleSort('exit_time')}>
                     出口时间{sortIndicator('exit_time')}
                   </th>
-                  <th style={{width: '70px'}}>车型</th>
-                  <th style={{width: '80px', cursor: 'pointer'}} onClick={() => toggleSort('gantry_count')}>
+                  <th className="col-narrow">车型</th>
+                  <th className="w-80 cursor-pointer" onClick={() => toggleSort('gantry_count')}>
                     门架数{sortIndicator('gantry_count')}
                   </th>
                 </tr>
@@ -402,7 +399,7 @@ function VehicleQuery() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} style={{textAlign: 'center', padding: '2rem'}}>
+                    <td colSpan={9} className="text-center p-4">
                       <span className="loading-spinner"></span> 加载中...
                     </td>
                   </tr>
@@ -410,7 +407,7 @@ function VehicleQuery() {
                   <tr>
                     <td colSpan={9}>
                       <div className="empty-state">
-                        <div className="empty-state-icon">🔎</div>
+                        <div className="empty-state-icon"></div>
                         <div className="empty-state-title">无匹配结果</div>
                         <div className="empty-state-text">请调整筛选条件或扩大日期范围</div>
                       </div>
@@ -421,35 +418,29 @@ function VehicleQuery() {
                     <tr
                       key={t.passid}
                       onClick={() => setSelectedPassid(t.passid)}
-                      style={{
-                        cursor: 'pointer',
-                        background: selectedPassid === t.passid ? 'var(--accent-blue-bg)' : undefined
-                      }}
+                      className="cursor-pointer"
+                      data-selected={selectedPassid === t.passid ? 'true' : undefined}
                     >
                       <td><span className="mono">{t.passid}</span></td>
-                      <td><span style={{fontWeight: 500}}>{t.entry_vehicle_id || '-'}</span></td>
-                      <td><span style={{fontSize: '0.75rem'}}>{t.entry_station_name || '-'}</span></td>
-                      <td><span className="mono" style={{fontSize: '0.7rem'}}>{formatTime(t.entry_time)}</span></td>
-                      <td><span style={{fontWeight: 500}}>{t.exit_vehicle_id || '-'}</span></td>
-                      <td><span style={{fontSize: '0.75rem'}}>{t.exit_station_name || '-'}</span></td>
-                      <td><span className="mono" style={{fontSize: '0.7rem'}}>{formatTime(t.exit_time)}</span></td>
+                      <td><span className="font-medium">{t.entry_vehicle_id || '-'}</span></td>
+                      <td><span className="text-sm">{t.entry_station_name || '-'}</span></td>
+                      <td><span className="mono text-xs">{formatTime(t.entry_time)}</span></td>
+                      <td><span className="font-medium">{t.exit_vehicle_id || '-'}</span></td>
+                      <td><span className="text-sm">{t.exit_station_name || '-'}</span></td>
+                      <td><span className="mono text-xs">{formatTime(t.exit_time)}</span></td>
                       <td>
-                        <span style={{
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: 4,
-                          fontSize: '0.75rem',
-                          background: t.entry_vehicle_type === 1 ? 'var(--accent-green-bg)' : 'var(--accent-amber-bg)',
-                          color: t.entry_vehicle_type === 1 ? 'var(--accent-green)' : 'var(--accent-amber)'
-                        }}>
+                        <span
+                          className="pill text-0p75"
+                          data-risk={t.entry_vehicle_type === 1 ? 'low' : 'medium'}
+                        >
                           {VEHICLE_TYPE_LABEL[t.entry_vehicle_type] || t.entry_vehicle_type || '-'}
                         </span>
                       </td>
                       <td>
-                        <span className={`badge ${t.gantry_count > 0 ? 'badge-info' : ''}`} style={{
-                          background: t.gantry_count > 0 ? 'var(--accent-blue-bg)' : 'var(--bg-tertiary)',
-                          color: t.gantry_count > 0 ? 'var(--accent-blue)' : 'var(--text-tertiary)',
-                          fontSize: '0.7rem'
-                        }}>
+                        <span
+                          className={`badge text-0p65 ${t.gantry_count > 0 ? 'pill-info' : 'pill'}`}
+                          data-risk={t.gantry_count > 0 ? 'muted' : undefined}
+                        >
                           {t.gantry_count || 0}
                         </span>
                       </td>
@@ -463,8 +454,7 @@ function VehicleQuery() {
             <div className="pagination-info">
               共 {total} 条，第 {page + 1} / {pageCount} 页
               <select
-                className="filter-select"
-                style={{ marginLeft: 12, padding: '0.2rem 0.4rem' }}
+                className="filter-select ml-3 px-2 py-1"
                 value={limit}
                 onChange={(e) => { setLimit(Number(e.target.value)); setPage(0) }}
               >
@@ -491,19 +481,19 @@ function VehicleQuery() {
         </div>
 
         {selectedPassid != null && (
-          <div className="detail-panel" style={{ width: 480 }}>
+          <div className="detail-panel w-480">
             <div className="detail-header">
               <div>
                 <div className="detail-title">行程详情</div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                <div className="text-xs text-tertiary mt-half">
                   {selectedPassid}
                 </div>
               </div>
-              <button className="detail-close" onClick={() => setSelectedPassid(null)}>✕</button>
+              <button className="detail-close" onClick={() => setSelectedPassid(null)}></button>
             </div>
             <div className="detail-body">
               {detailLoading ? (
-                <div style={{ textAlign: 'center', padding: '2rem' }}>
+                <div className="text-center p-4">
                   <span className="loading-spinner"></span> 加载详情中...
                 </div>
               ) : !selectedDetail ? (

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from threading import local
 from typing import Dict, List
@@ -349,6 +350,7 @@ def _execute_passenger_obu_audit(filter_rules: dict, task: dict, trip_repo) -> d
       - anomaly_count / anomaly_ids_sample: 命中的 audit_results.id 列表（前 50 个）
     """
     from apps.api.services.passenger_obu_detector import detect_trip, FRAUD_TYPE
+    from apps.api.services.doris_trip_query import find_passenger_obu_candidates_doris
     from apps.api.database.repositories.audit_repository import AuditRepository
     from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
 
@@ -362,69 +364,104 @@ def _execute_passenger_obu_audit(filter_rules: dict, task: dict, trip_repo) -> d
     else:
         start_dt = _parse_dt(rules['start_time'])
     end_dt = datetime.now(_BEIJING_TZ).replace(tzinfo=None)
-    logger.info("Passenger OBU audit window: %s ~ %s", start_dt, end_dt)
+    logger.info("Passenger OBU audit window: %s ~ %s (workers=%d)",
+                start_dt, end_dt, rules['max_workers'])
 
     scanned = 0
     suspicious = 0
     new_anomaly_ids: List[int] = []
+    # 按 trip 的实际 entry_time 所在日期累加,避免跨天扫描被错归到起始日。
+    per_day_scanned: Dict[str, int] = {}
+    per_day_suspicious: Dict[str, int] = {}
+    last_run_at_str = end_dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    def _flush_daily_stats() -> None:
+        """把当前 per-day 累加器落库。每页调一次,被 60 分钟硬限 kill 时
+        最多丢失当前正在处理的一页(page_size 默认 500),不再丢整批。"""
+        for day, c in per_day_scanned.items():
+            stats_repo.upsert_daily_stat(
+                date=day,
+                fraud_type=FRAUD_TYPE,
+                scanned_count_delta=c,
+                suspicious_count_delta=per_day_suspicious.get(day, 0),
+                last_run_at=last_run_at_str,
+            )
+
+    def _detect_one(trip: dict):
+        """对单条 trip 跑 detect_trip,异常吞掉返回 None(原 for 循环本来就 try)."""
+        try:
+            return trip, detect_trip(trip)
+        except Exception as e:
+            logger.warning("detect_trip failed for passid=%s: %s",
+                           trip.get('passid'), e)
+            return trip, None
+
     offset = 0
     while scanned < rules['limit']:
-        rows = trip_repo.find_passenger_obu_candidates(
+        rows = find_passenger_obu_candidates_doris(
             start_time=start_dt.strftime('%Y-%m-%d %H:%M:%S'),
             end_time=end_dt.strftime('%Y-%m-%d %H:%M:%S'),
             plate_prefix_exclude=rules['plate_prefix_exclude'],
             declared_vehicle_type=rules['declared_vehicle_type'],
+            media_type=1,
             limit=rules['page_size'],
             offset=offset,
         )
         if not rows:
             break
         scanned += len(rows)
-        for trip in rows:
-            details = detect_trip(trip)
-            if details is None:
-                continue
-            try:
-                rid = audit_repo.save_result({
-                    'audit_trip_id': trip['id'],
-                    'fraud_type': FRAUD_TYPE,
-                    'entry_vehicle_type': details['entry_vehicle_type'],
-                    'exit_vehicle_type': details['exit_vehicle_type'],
-                    'is_suspicious': 1,
-                    'risk_score': details['risk_score'],
-                    'details': json.dumps({
-                        'source_side': details['source_side'],
-                        'entry_obu_id': details['entry_obu_id'],
-                        'exit_obu_id': details['exit_obu_id'],
-                        'entry_media_type': details.get('entry_media_type'),
-                        'exit_media_type': details.get('exit_media_type'),
-                        'entry_visual_type': details['entry_visual_type'],
-                        'exit_visual_type': details['exit_visual_type'],
-                        'visual_vehicle_type': details['visual_vehicle_type'],
-                        'llm_verified': details['llm_verified'],
-                        'llm_confidence': details['llm_confidence'],
-                        'rule_version': 'v1',
-                    }, ensure_ascii=False),
-                })
-                new_anomaly_ids.append(rid)
-                suspicious += 1
-            except Exception as e:
-                logger.warning(
-                    "save audit_result failed for passid=%s: %s",
-                    trip.get('passid'), e,
-                )
+
+        # 并行调 AI service。detect_trip 内部会调 1-2 次(每侧一次),
+        # 单 trip 的多侧仍是串行(共享 trip 上下文),但 trip 之间并行。
+        # max_workers 默认 4 — 经验值:AI service GPU 队列不会拥堵,
+        # 4 路并发可把 ~10 trips/min 提到 ~30+ trips/min。
+        with ThreadPoolExecutor(max_workers=rules['max_workers']) as ex:
+            for trip, details in ex.map(_detect_one, rows):
+                # 按 entry_time 落桶;entry_time 缺失时落到 exit_time,都没有则归 end_dt
+                t_for_day = _parse_dt(trip.get('entry_time')) or _parse_dt(trip.get('exit_time')) or end_dt
+                day_key = t_for_day.strftime('%Y-%m-%d')
+                per_day_scanned[day_key] = per_day_scanned.get(day_key, 0) + 1
+
+                if details is None:
+                    continue
+                try:
+                    # 确保 audit_trips 有记录（Doris 原始数据无 id，需 upsert 拿 FK）
+                    trip_id = trip_repo.save_trip(trip)
+                    rid = audit_repo.save_result({
+                        'audit_trip_id': trip_id,
+                        'fraud_type': FRAUD_TYPE,
+                        'entry_vehicle_type': details['entry_vehicle_type'],
+                        'exit_vehicle_type': details['exit_vehicle_type'],
+                        'is_suspicious': 1,
+                        'risk_score': details['risk_score'],
+                        'details': json.dumps({
+                            'source_side': details['source_side'],
+                            'entry_obu_id': details['entry_obu_id'],
+                            'exit_obu_id': details['exit_obu_id'],
+                            'entry_media_type': details.get('entry_media_type'),
+                            'exit_media_type': details.get('exit_media_type'),
+                            'entry_visual_type': details['entry_visual_type'],
+                            'exit_visual_type': details['exit_visual_type'],
+                            'visual_vehicle_type': details['visual_vehicle_type'],
+                            'llm_verified': details['llm_verified'],
+                            'llm_confidence': details['llm_confidence'],
+                            'llm_reason': details.get('llm_reason'),
+                            'rule_version': 'v1',
+                        }, ensure_ascii=False),
+                    })
+                    new_anomaly_ids.append(rid)
+                    suspicious += 1
+                    per_day_suspicious[day_key] = per_day_suspicious.get(day_key, 0) + 1
+                except Exception as e:
+                    logger.warning(
+                        "save audit_result failed for passid=%s: %s",
+                        trip.get('passid'), e,
+                    )
+        # 每页 flush:即使 60 分钟硬限 kill,已完成的页面数据已落库
+        _flush_daily_stats()
         if len(rows) < rules['page_size']:
             break
         offset += rules['page_size']
-
-    day = start_dt.strftime('%Y-%m-%d')
-    stats_repo.upsert_daily_stat(
-        date=day,
-        fraud_type=FRAUD_TYPE,
-        scanned_count_delta=scanned,
-        suspicious_count_delta=suspicious,
-        last_run_at=end_dt.strftime('%Y-%m-%d %H:%M:%S'),
-    )
 
     return {
         'task_type': 'passenger_obu_audit',
@@ -444,6 +481,7 @@ def _normalize_passenger_obu_rules(filter_rules: dict) -> dict:
         'plate_prefix_exclude': filter_rules.get('plate_prefix_exclude', '新A'),
         'limit': int(filter_rules.get('limit', 2000)),
         'page_size': int(filter_rules.get('page_size', 500)),
+        'max_workers': int(filter_rules.get('max_workers', 4)),
     }
 
 

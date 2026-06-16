@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Icon from './Icon'
 
 function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
   const [phase, setPhase] = useState('direct') // direct | proxy | error
@@ -7,7 +8,7 @@ function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
   if (!imageUrl) {
     return (
       <div className="image-fallback-box" style={style}>
-        <span style={{ fontSize: '1.5rem' }}>🖼️</span>
+        <Icon name="image" size="xl" />
         <span>无图像</span>
       </div>
     )
@@ -34,15 +35,14 @@ function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
     return (
       <div className="smart-image-wrap" style={style}>
         <div className="image-error-box">
-          <span style={{ fontSize: '1.5rem' }}>⚠️</span>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>加载失败</span>
+          <Icon name="alert-triangle" size="xl" />
+          <span className="text-sm text-secondary">加载失败</span>
           <button
             type="button"
-            className="btn btn-link btn-sm"
-            style={{ fontSize: '0.7rem', padding: 0, marginTop: 4 }}
+            className="btn btn-link btn-sm text-0p75 mt-1 p-0"
             onClick={handleRetry}
           >
-            🔄 重试
+            <Icon name="refresh" size="sm" />重试
           </button>
         </div>
       </div>

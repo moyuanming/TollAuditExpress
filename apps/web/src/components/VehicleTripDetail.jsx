@@ -8,6 +8,7 @@ import GantryTimeline from './GantryTimeline'
 import GantryImageTimeline from './GantryImageTimeline'
 import { DecisionTable, ImageBox, JsonView, formatTime } from './tripDetailUtils'
 import { auditApi } from '../api/audit'
+import Icon from './Icon'
 
 const LLM_ERROR_MAP = {
   maas_unavailable: {
@@ -116,31 +117,30 @@ function LlmCompareSection({ passid, hasEntry, hasExit, initialVerdict, onVerifi
 
   return (
     <div className="detail-section">
-      <div className="detail-section-title">🤖 LLM 判定同一车辆</div>
+      <div className="detail-section-title"><Icon name="sparkles" />LLM 判定同一车辆</div>
       <button
         className="btn btn-primary"
         onClick={handleClick}
         disabled={disabled || state.loading}
       >
-        {state.loading ? '分析中…' : hasVerdict ? '🔄 重新检测' : '🤖 调用 MaaS 比对出入口车牌'}
+        {state.loading ? <><Icon name="loader" />分析中…</> : hasVerdict ? <><Icon name="refresh" />重新检测</> : <><Icon name="sparkles" />调用 MaaS 比对出入口车牌</>}
       </button>
       {hint && !verdict && !state.error && (
-        <div className="alert alert-warning" style={{ marginTop: 8 }}>
+        <div className="alert alert-warning mt-2">
           <span>{hint}</span>
         </div>
       )}
       {state.error && (
-        <div className="alert alert-warning" style={{ marginTop: 8, flexDirection: 'column', alignItems: 'stretch' }}>
-          <span>❌ {state.error.message}</span>
+        <div className="alert alert-warning col items-stretch mt-2">
+          <span><Icon name="x-circle" />{state.error.message}</span>
           {state.error.hint && (
-            <span style={{ marginTop: 4, fontSize: '0.8rem', opacity: 0.85 }}>
+            <span className="mt-1 text-0p8 opacity-85">
               {state.error.hint}
             </span>
           )}
           {!disabled && (
             <button
-              className="btn btn-secondary"
-              style={{ marginTop: 8, alignSelf: 'flex-start' }}
+              className="btn btn-secondary mt-2 align-self-start"
               onClick={handleClick}
               disabled={state.loading}
             >
@@ -151,21 +151,20 @@ function LlmCompareSection({ passid, hasEntry, hasExit, initialVerdict, onVerifi
       )}
       {verdict && (
         <div
-          className={`alert ${verdict.is_same_vehicle ? 'alert-success' : 'alert-warning'}`}
-          style={{ marginTop: 8, flexDirection: 'column', alignItems: 'stretch' }}
+          className={`alert col items-stretch mt-2 ${verdict.is_same_vehicle ? 'alert-success' : 'alert-warning'}`}
         >
-          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-            {verdict.is_same_vehicle ? '✅ 判定为同一车辆' : '❌ 判定为不同车辆'}
-            <span style={{ marginLeft: 8, color: 'var(--text-secondary)', fontWeight: 400, fontSize: '0.8rem' }}>
+          <div className="text-0p95 fw-700">
+            {verdict.is_same_vehicle ? <><Icon name="check" />判定为同一车辆</> : <><Icon name="x-circle" />判定为不同车辆</>}
+            <span className="ml-2 text-secondary text-0p8">
               置信度 {((verdict.confidence || 0) * 100).toFixed(0)}%
             </span>
           </div>
           {verdict.reason && (
-            <div style={{ marginTop: 4, fontSize: '0.85rem' }}>
+            <div className="mt-1 text-0p85">
               依据：{verdict.reason}
             </div>
           )}
-          <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>
+          <div className="mt-1 text-xs text-tertiary">
             模型 {verdict.model || '—'}
             {verdict.elapsed_ms != null && ` · 用时 ${verdict.elapsed_ms}ms`}
           </div>
@@ -181,11 +180,11 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
       {/* 决策依据：仅当存在 audit_results 时展示（按 fraud_type 逐个） */}
       {trip.audit_results && trip.audit_results.length > 0 && (
         <div className="detail-section">
-          <div className="detail-section-title">🎯 决策依据</div>
+          <div className="detail-section-title"><Icon name="target" />决策依据</div>
           {trip.audit_results.map((r, i) => (
-            <div key={i} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginBottom: 4 }}>
-                {r.fraud_type === 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A' ? '🚗 客车套用货车OBU' : r.fraud_type === 'TRUCK_USES_PASSENGER_OBU' ? '🚛 货车套用OBU' : '🚗 出入口不一致'}
+            <div key={i} className="mb-3">
+              <div className="text-xs text-tertiary mb-1">
+                {r.fraud_type === 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A' ? <><Icon name="route" size="sm" /> 客车套用货车OBU</> : r.fraud_type === 'TRUCK_USES_PASSENGER_OBU' ? <><Icon name="bus" size="sm" /> 货车套用OBU</> : <><Icon name="route" size="sm" /> 出入口不一致</>}
                 {' · 风险 '}
                 {r.risk_score != null ? r.risk_score.toFixed(2) : '—'}
               </div>
@@ -199,7 +198,7 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
       {/* 图像对比 */}
       {(trip.entry_image_license || trip.exit_image_license) && (
         <div className="detail-section">
-          <div className="detail-section-title">📷 图像对比</div>
+          <div className="detail-section-title"><Icon name="camera" />图像对比</div>
 
           <div className="detail-subsection-title">车牌图像</div>
           <div className="image-compare">
@@ -219,7 +218,7 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
 
           {(trip.entry_image_trans || trip.exit_image_trans) && (
             <>
-              <div className="detail-subsection-title" style={{ marginTop: 12 }}>车体/侧面图像</div>
+              <div className="detail-subsection-title mt-3">车体/侧面图像</div>
               <div className="image-compare">
                 <ImageBox
                   label="入口"
@@ -244,7 +243,7 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
 
       {/* 基础信息 */}
       <div className="detail-section">
-        <div className="detail-section-title">📋 基础信息</div>
+        <div className="detail-section-title"><Icon name="info" />基础信息</div>
         <div className="detail-grid">
           <div className="detail-item">
             <span className="detail-label">入口站</span>
@@ -284,10 +283,10 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
       {/* AI 检测原始数据：每个 audit_result 一个 JsonView */}
       {trip.audit_results && trip.audit_results.length > 0 && (
         <div className="detail-section">
-          <div className="detail-section-title">🤖 AI 检测原始数据</div>
+          <div className="detail-section-title"><Icon name="sparkles" />AI 检测原始数据</div>
           {trip.audit_results.map((r, i) => (
-            <div key={i} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginBottom: 4 }}>
+            <div key={i} className="mb-3">
+              <div className="text-xs text-tertiary mb-1">
                 {r.fraud_type}
               </div>
               <JsonView data={r.details} />

@@ -166,15 +166,23 @@ export const auditApi = {
 
   // 客车 OBU 监测 — 按日统计列表
   async getPassengerObuDailyStats(params = {}) {
-    const qs = new URLSearchParams(params).toString()
-    return fetchJSON(`${API_BASE}/passenger-obu/stats/daily${qs ? `?${qs}` : ''}`)
+    const qs = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, v)
+    })
+    const q = qs.toString()
+    return fetchJSON(`${API_BASE}/passenger-obu/stats/daily${q ? `?${q}` : ''}`)
   },
 
   // 客车 OBU 监测 — 异常记录列表
   async getPassengerObuAnomalies(params = {}) {
-    const qs = new URLSearchParams(params).toString()
-    return fetchJSON(`${API_BASE}/passenger-obu/anomalies${qs ? `?${qs}` : ''}`)
-  }
+    const qs = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, v)
+    })
+    const q = qs.toString()
+    return fetchJSON(`${API_BASE}/passenger-obu/anomalies${q ? `?${q}` : ''}`)
+  },
 }
 
 export const taskApi = {

@@ -25,12 +25,14 @@ from apps.api.database.repositories.truck_obu_stats_repository import TruckObuSt
 def _make_trip(trip_id=1, passid='PASS_TEST_1', entry_vt=1, exit_vt=1,
                entry_vid='川A12345', exit_vid='川A12345',
                entry_img='http://example.com/entry_trans.jpg',
-               exit_img='http://example.com/exit_trans.jpg'):
+               exit_img='http://example.com/exit_trans.jpg',
+               entry_time='2026-06-14 10:00:00',
+               exit_time='2026-06-14 12:00:00'):
     return {
         'id': trip_id,
         'passid': passid,
-        'entry_time': '2026-06-14 10:00:00',
-        'exit_time': '2026-06-14 12:00:00',
+        'entry_time': entry_time,
+        'exit_time': exit_time,
         'entry_vehicle_id': entry_vid,
         'exit_vehicle_id': exit_vid,
         'entry_vehicle_type': entry_vt,
@@ -234,6 +236,59 @@ class TestHitPath:
             assert stats[0]['scanned_count'] == 1
             assert stats[0]['suspicious_count'] == 1
 
+    def test_per_day_attribution(self, temp_db, trip_repo, mock_ai_client):
+        """跨天扫描的候选,scanned/suspicious 应按 entry_time 所在日分别累加,
+        而非全部归到 start_dt 当天(修复前的 bug 是 day = start_dt.strftime(...))。
+        """
+        from apps.api.database.repositories.trip_repository import TripRepository
+        repo = TripRepository()
+        id_d1 = repo.save_trip({
+            'passid': 'P_D1',
+            'entry_time': '2026-06-13 23:30:00',
+            'exit_time': '2026-06-14 00:30:00',
+            'entry_vehicle_id': '川A12345', 'exit_vehicle_id': '川A12345',
+        })
+        id_d2 = repo.save_trip({
+            'passid': 'P_D2',
+            'entry_time': '2026-06-14 00:10:00',
+            'exit_time': '2026-06-14 01:00:00',
+            'entry_vehicle_id': '川A12345', 'exit_vehicle_id': '川A12345',
+        })
+        with patch(
+            'apps.api.services.passenger_obu_detector.detect_trip',
+            return_value=_hit_details('ENTRY'),
+        ):
+            trip_repo.find_passenger_obu_candidates.return_value = [
+                _make_trip(
+                    trip_id=id_d1, passid='P_D1',
+                    entry_vt=1, exit_vt=1,
+                    entry_img='http://example.com/entry_d1.jpg',
+                    exit_img='http://example.com/exit_d1.jpg',
+                    entry_time='2026-06-13 23:30:00',
+                    exit_time='2026-06-14 00:30:00',
+                ),
+                _make_trip(
+                    trip_id=id_d2, passid='P_D2',
+                    entry_vt=1, exit_vt=1,
+                    entry_img='http://example.com/entry_d2.jpg',
+                    exit_img='http://example.com/exit_d2.jpg',
+                    entry_time='2026-06-14 00:10:00',
+                    exit_time='2026-06-14 01:00:00',
+                ),
+            ]
+            # 增量任务,last_run_at=6/13 23:55 → start_dt=6/13 23:50
+            task = {'last_run_at': '2026-06-13 23:55:00'}
+            _execute_passenger_obu_audit({}, task, trip_repo)
+
+        stats_repo = TruckObuStatsRepository()
+        stats = stats_repo.get_daily_stats(fraud_type=FRAUD_TYPE)
+        by_date = {s['date']: s for s in stats}
+        # P_D1 的 entry_time 在 6/13,P_D2 的 entry_time 在 6/14 — 各归各的日
+        assert by_date['2026-06-13']['scanned_count'] == 1
+        assert by_date['2026-06-13']['suspicious_count'] == 1
+        assert by_date['2026-06-14']['scanned_count'] == 1
+        assert by_date['2026-06-14']['suspicious_count'] == 1
+
     def test_miss_path_still_writes_daily_stat(self, temp_db, trip_repo, mock_ai_client):
         """未命中 → daily stat 仍累加 scanned,但 suspicious=0"""
         with patch('apps.api.services.passenger_obu_detector.detect_trip', return_value=None):
@@ -344,3 +399,41 @@ class TestRulesPassthrough:
             first_kwargs = trip_repo.find_passenger_obu_candidates.call_args_list[0].kwargs
             assert first_kwargs['limit'] == 50
             assert first_kwargs['offset'] == 0
+
+    def test_default_max_workers_is_four(self, temp_db, trip_repo, mock_ai_client):
+        """未指定 max_workers 时默认 4(并行化 AI service 调用的 worker 数)"""
+        with patch('apps.api.services.passenger_obu_detector.detect_trip', return_value=None):
+            trip_repo.find_passenger_obu_candidates.return_value = [
+                _make_trip(trip_id=1, passid='P1'),
+            ]
+            with patch('apps.api.services.task_executor.ThreadPoolExecutor') as ex_mock:
+                task = {'last_run_at': None}
+                _execute_passenger_obu_audit({}, task, trip_repo)
+                ex_mock.assert_called_once_with(max_workers=4)
+
+    def test_custom_max_workers_passthrough(self, temp_db, trip_repo, mock_ai_client):
+        """自定义 max_workers 透传到 ThreadPoolExecutor"""
+        with patch('apps.api.services.passenger_obu_detector.detect_trip', return_value=None):
+            trip_repo.find_passenger_obu_candidates.return_value = [
+                _make_trip(trip_id=1, passid='P1'),
+            ]
+            with patch('apps.api.services.task_executor.ThreadPoolExecutor') as ex_mock:
+                task = {'last_run_at': None}
+                _execute_passenger_obu_audit({'max_workers': 8}, task, trip_repo)
+                ex_mock.assert_called_once_with(max_workers=8)
+
+    def test_detect_trip_exception_isolated(self, temp_db, trip_repo, mock_ai_client):
+        """detect_trip 抛异常时,只丢该条 trip,其他正常处理(R1 路径不应因单条崩溃整批)"""
+        with patch('apps.api.services.passenger_obu_detector.detect_trip') as det:
+            det.side_effect = [RuntimeError('boom'), None, None]
+            trip_repo.find_passenger_obu_candidates.return_value = [
+                _make_trip(trip_id=i, passid=f'P{i}') for i in range(1, 4)
+            ]
+            task = {'last_run_at': None}
+            result = _execute_passenger_obu_audit({}, task, trip_repo)
+            assert result['scanned'] == 3
+            assert result['suspicious'] == 0  # 异常 trip 不算命中
+            # 其它 trip 的 daily stat 仍正常累加
+            stats_repo = TruckObuStatsRepository()
+            stats = stats_repo.get_daily_stats(fraud_type=FRAUD_TYPE)
+            assert sum(s['scanned_count'] for s in stats) == 3
