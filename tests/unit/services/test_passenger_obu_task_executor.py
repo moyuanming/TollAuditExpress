@@ -219,6 +219,9 @@ class TestHitPath:
                 "exit_vehicle_id": "川A12345",
             }
         )
+        # trip_repo 是 MagicMock,save_trip 默认返回 MagicMock 而非 int,
+        # 透传会令 audit_repo.save_result 收到非 int audit_trip_id 而 SQLite 报错。
+        trip_repo.save_trip.side_effect = lambda trip: trip.get("id", seeded_id)
         with patch(
             "apps.api.services.passenger_obu_detector.detect_trip",
             return_value=_hit_details("ENTRY"),
@@ -281,6 +284,7 @@ class TestHitPath:
                 "exit_vehicle_id": "川A12345",
             }
         )
+        trip_repo.save_trip.side_effect = lambda trip: trip.get("id")
         with patch(
             "apps.api.services.passenger_obu_detector.detect_trip",
             return_value=_hit_details("ENTRY"),
@@ -359,6 +363,7 @@ class TestHitPath:
                 }
             )
             seeded_ids.append(tid)
+        trip_repo.save_trip.side_effect = lambda trip: trip.get("id")
         with patch(
             "apps.api.services.passenger_obu_detector.detect_trip",
             return_value=_hit_details("ENTRY"),

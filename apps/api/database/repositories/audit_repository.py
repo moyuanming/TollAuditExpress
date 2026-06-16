@@ -1,7 +1,6 @@
 """稽核结果数据访问层"""
 
-from typing import Optional, List, Dict
-from datetime import datetime
+from typing import ClassVar
 
 from apps.api.database.doris_connection import get_connection
 
@@ -9,9 +8,24 @@ from apps.api.database.doris_connection import get_connection
 class AuditRepository:
     """稽核结果仓储"""
 
-    def get_suspects(self, fraud_type: str = None, fraud_types: Optional[List[str]] = None,
-                     process_status: str = None,
-                     llm_result: str = None, limit: int = 100, offset: int = 0) -> List[Dict]:
+    # sort_by 白名单:避免把用户输入直接拼进 ORDER BY,防止 SQL 注入
+    SORT_BY_WHITELIST: ClassVar[dict[str, str]] = {
+        "exit_time": "at.exit_time DESC, ar.created_at DESC",
+        "created_at": "ar.created_at DESC",
+        "risk_score": "ar.risk_score DESC, ar.created_at DESC",
+    }
+
+    def get_suspects(
+        self,
+        fraud_type: str = None,
+        fraud_types: list[str] | None = None,
+        process_status: str = None,
+        llm_result: str = None,
+        limit: int = 100,
+        offset: int = 0,
+        sort_by: str = "exit_time",
+    ) -> list[dict]:
+        order_expr = self.SORT_BY_WHITELIST.get(sort_by, self.SORT_BY_WHITELIST["exit_time"])
         with get_connection() as conn:
             cursor = conn.cursor()
             conditions = ["ar.is_suspicious = 1"]
@@ -26,14 +40,15 @@ class AuditRepository:
             if process_status:
                 conditions.append("ar.process_status = %s")
                 params.append(process_status)
-            if llm_result == 'same':
+            if llm_result == "same":
                 conditions.append("ar.llm_is_same_vehicle = 1")
-            elif llm_result == 'different':
+            elif llm_result == "different":
                 conditions.append("ar.llm_is_same_vehicle = 0")
-            elif llm_result == 'pending':
+            elif llm_result == "pending":
                 conditions.append("ar.llm_checked_at IS NULL")
             where = " AND ".join(conditions)
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 SELECT ar.*, at.passid,
                        at.entry_time, at.exit_time,
                        at.entry_station_name, at.exit_station_name,
@@ -42,13 +57,19 @@ class AuditRepository:
                 FROM audit_results ar
                 JOIN audit_trips at ON ar.audit_trip_id = at.id
                 WHERE {where}
-                ORDER BY ar.created_at DESC LIMIT %s OFFSET %s
-            """, params + [limit, offset])
+                ORDER BY {order_expr} LIMIT %s OFFSET %s
+            """,
+                params + [limit, offset],
+            )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_suspects_count(self, fraud_type: str = None, fraud_types: Optional[List[str]] = None,
-                           process_status: str = None,
-                           llm_result: str = None) -> int:
+    def get_suspects_count(
+        self,
+        fraud_type: str = None,
+        fraud_types: list[str] | None = None,
+        process_status: str = None,
+        llm_result: str = None,
+    ) -> int:
         with get_connection() as conn:
             cursor = conn.cursor()
             conditions = ["is_suspicious = 1"]
@@ -63,21 +84,22 @@ class AuditRepository:
             if process_status:
                 conditions.append("process_status = %s")
                 params.append(process_status)
-            if llm_result == 'same':
+            if llm_result == "same":
                 conditions.append("llm_is_same_vehicle = 1")
-            elif llm_result == 'different':
+            elif llm_result == "different":
                 conditions.append("llm_is_same_vehicle = 0")
-            elif llm_result == 'pending':
+            elif llm_result == "pending":
                 conditions.append("llm_checked_at IS NULL")
             where = " AND ".join(conditions)
             cursor.execute(f"SELECT COUNT(*) as count FROM audit_results WHERE {where}", params)
-            return cursor.fetchone()['count']
+            return cursor.fetchone()["count"]
 
-    def get_pending_llm_suspects(self, limit: int = 50) -> List[Dict]:
+    def get_pending_llm_suspects(self, limit: int = 50) -> list[dict]:
         """取尚未跑 LLM 判定且出入口 visual_type 齐全的可疑记录。"""
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT ar.id, ar.audit_trip_id, ar.fraud_type, at.passid
                 FROM audit_results ar
                 JOIN audit_trips at ON ar.audit_trip_id = at.id
@@ -87,15 +109,18 @@ class AuditRepository:
                   AND ar.exit_visual_type IS NOT NULL
                 ORDER BY ar.created_at DESC
                 LIMIT %s
-            """, (limit,))
+            """,
+                (limit,),
+            )
             return [dict(row) for row in cursor.fetchall()]
 
-    def update_llm_verdict(self, suspect_id: int, *, is_same: bool,
-                           confidence: float, reason: str, model: str,
-                           checked_at: str) -> None:
+    def update_llm_verdict(
+        self, suspect_id: int, *, is_same: bool, confidence: float, reason: str, model: str, checked_at: str
+    ) -> None:
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE audit_results
                 SET llm_is_same_vehicle = %s,
                     llm_confidence = %s,
@@ -103,13 +128,16 @@ class AuditRepository:
                     llm_model = %s,
                     llm_checked_at = %s
                 WHERE id = %s
-            """, (1 if is_same else 0, confidence, reason, model, checked_at, suspect_id))
+            """,
+                (1 if is_same else 0, confidence, reason, model, checked_at, suspect_id),
+            )
             conn.commit()
 
-    def get_suspect_detail(self, suspect_id: int) -> Optional[Dict]:
+    def get_suspect_detail(self, suspect_id: int) -> dict | None:
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT ar.*, at.passid, at.entry_time, at.exit_time,
                        at.entry_station_name, at.exit_station_name,
                        at.entry_lane_id, at.exit_lane_id,
@@ -124,11 +152,13 @@ class AuditRepository:
                 FROM audit_results ar
                 JOIN audit_trips at ON ar.audit_trip_id = at.id
                 WHERE ar.id = %s
-            """, (suspect_id,))
+            """,
+                (suspect_id,),
+            )
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def get_suspect_by_id(self, suspect_id: int) -> Optional[Dict]:
+    def get_suspect_by_id(self, suspect_id: int) -> dict | None:
         """仅取 audit_results 行（不含 trip join）—— 手动 LLM 路由用，验明存在性。"""
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -136,7 +166,7 @@ class AuditRepository:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def get_visual_features_by_passid(self, passid: str) -> Optional[Dict]:
+    def get_visual_features_by_passid(self, passid: str) -> dict | None:
         """按 passid 取最近一条可疑稽核结果的视觉信号（颜色/车型/fingerprint_sim）。
 
         用于把侧车非 LLM 信号（HSV 颜色、ResNet18 车型、ResNet50 2048-d 余弦相似度）
@@ -144,7 +174,8 @@ class AuditRepository:
         """
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT ar.entry_color, ar.exit_color,
                        ar.entry_visual_type, ar.exit_visual_type,
                        at.fingerprint_sim
@@ -153,11 +184,13 @@ class AuditRepository:
                 WHERE at.passid = %s
                 ORDER BY ar.created_at DESC
                 LIMIT 1
-            """, (passid,))
+            """,
+                (passid,),
+            )
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def save_result(self, result_data: Dict) -> int:
+    def save_result(self, result_data: dict) -> int:
         with get_connection() as conn:
             cursor = conn.cursor()
             sql = """
@@ -169,18 +202,18 @@ class AuditRepository:
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             values = (
-                result_data.get('audit_trip_id'),
-                result_data.get('fraud_type'),
-                result_data.get('entry_vehicle_type'),
-                result_data.get('entry_visual_type'),
-                result_data.get('entry_color'),
-                result_data.get('exit_vehicle_type'),
-                result_data.get('exit_visual_type'),
-                result_data.get('exit_color'),
-                result_data.get('is_suspicious', 0),
-                result_data.get('risk_score', 0),
-                result_data.get('details'),
-                result_data.get('process_status', 'UNPROCESSED')
+                result_data.get("audit_trip_id"),
+                result_data.get("fraud_type"),
+                result_data.get("entry_vehicle_type"),
+                result_data.get("entry_visual_type"),
+                result_data.get("entry_color"),
+                result_data.get("exit_vehicle_type"),
+                result_data.get("exit_visual_type"),
+                result_data.get("exit_color"),
+                result_data.get("is_suspicious", 0),
+                result_data.get("risk_score", 0),
+                result_data.get("details"),
+                result_data.get("process_status", "UNPROCESSED"),
             )
             cursor.execute(sql, values)
             result_id = cursor.lastrowid
@@ -190,13 +223,19 @@ class AuditRepository:
     def update_process_status(self, result_id: int, action: str, operator: str = None, comments: str = None):
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE audit_results
                 SET process_status = %s
                 WHERE id = %s
-            """, (action, result_id))
-            cursor.execute("""
+            """,
+                (action, result_id),
+            )
+            cursor.execute(
+                """
                 INSERT INTO audit_actions (result_id, action, operator, comments)
                 VALUES (%s, %s, %s, %s)
-            """, (result_id, action, operator, comments))
+            """,
+                (result_id, action, operator, comments),
+            )
             conn.commit()

@@ -308,12 +308,38 @@ function PassengerOBUMonitor() {
                           </span>
                         </td>
                         <td>
-                          {a.llm_verified === true ? (
-                            <span className="badge badge-success" title={`置信度 ${((a.llm_confidence || 0) * 100).toFixed(0)}%`}>通过</span>
+                          {a.llm_call_status === 'called_confirmed' ? (
+                            <span
+                              className="badge badge-success"
+                              title={`LLM 调用: 已通过 (${((a.llm_confidence || 0) * 100).toFixed(0)}%)`}
+                            >通过</span>
+                          ) : a.llm_call_status === 'called_rejected' ? (
+                            <span
+                              className="badge badge-warning"
+                              title={`LLM 调用: 判定不是货车 (${((a.llm_confidence || 0) * 100).toFixed(0)}%)`}
+                            >未通过</span>
+                          ) : a.llm_call_status === 'not_called' ? (
+                            <span
+                              className="badge badge-secondary"
+                              title="LLM 未调用(ML 视觉已高自信)"
+                            >未调LLM</span>
+                          ) : a.llm_call_status === 'service_error' ? (
+                            <span
+                              className="badge badge-danger"
+                              title="vehicle-ai-service 不可达或超时,LLM 未实际执行"
+                            >服务异常</span>
+                          ) : a.llm_verified === true ? (
+                            <span
+                              className="badge badge-success"
+                              title={`置信度 ${((a.llm_confidence || 0) * 100).toFixed(0)}% (老数据)`}
+                            >通过</span>
                           ) : a.llm_verified === false ? (
-                            <span className="badge badge-warning">未通过</span>
+                            <span
+                              className="badge badge-warning"
+                              title="未通过 (老数据,详细调用状态未知)"
+                            >未通过</span>
                           ) : (
-                            <span className="badge badge-info">—</span>
+                            <span className="badge badge-info" title="LLM 状态未知">—</span>
                           )}
                         </td>
                         <td>

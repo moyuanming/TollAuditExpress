@@ -1,39 +1,60 @@
 """稽核系统 API 路由"""
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Query
-from fastapi.responses import StreamingResponse, Response
-from starlette.concurrency import run_in_threadpool
-import httpx
-from typing import Optional, List
-import uuid
 import json
+import uuid
+
+import httpx
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi.responses import Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from apps.api.core.logging_config import get_logger
-
-from apps.api.services.trip_aggregator import (
-    TripAggregator, get_gantry_images_by_vehicle, serialize_gantry_image_records
+from apps.api.core.vehicle_ai_client import get_client
+from apps.api.database.repositories.audit_repository import AuditRepository
+from apps.api.database.repositories.trip_repository import (
+    SORTABLE_COLUMNS,
+    VEHICLE_ID_MATCH_MODES,
+    VEHICLE_TYPE_VALUES,
+    TripRepository,
+)
+from apps.api.models.schemas import (
+    AggregateRequest,
+    DetectEntryExitLLMRequest,
+    DetectRequest,
+    LlmVehicleCompareResponse,
+    PassengerObuAnomalyItem,
+    PassengerObuAnomalyListResponse,
+    PassengerObuDailyStat,
+    PassengerObuDailyStatListResponse,
+    PassengerObuOverviewResponse,
+    ProcessRequest,
+    RawTripDetailResponse,
+    RawTripListResponse,
+    RawTripResponse,
+    StatsResponse,
+    SuspectListResponse,
+    SuspectResponse,
+    TripDetailResponse,
+    TripListResponse,
+    TripResponse,
 )
 from apps.api.services.doris_trip_query import (
-    query_trips as doris_query_trips,
-    get_trip_detail as doris_get_trip_detail,
     SORTABLE_COLUMNS_DORIS,
     VEHICLE_ID_MATCH_MODES_DORIS,
 )
+from apps.api.services.doris_trip_query import (
+    get_trip_detail as doris_get_trip_detail,
+)
+from apps.api.services.doris_trip_query import (
+    query_trips as doris_query_trips,
+)
 from apps.api.services.entry_exit_matcher import EntryExitMatcher
+from apps.api.services.trip_aggregator import (
+    TripAggregator,
+    get_gantry_images_by_vehicle,
+    serialize_gantry_image_records,
+)
 from apps.api.services.vehicle_comparator import compare_vehicles_by_passid
-from apps.api.core.vehicle_ai_client import get_client
-from apps.api.database.repositories.trip_repository import (
-    TripRepository, SORTABLE_COLUMNS, VEHICLE_TYPE_VALUES, VEHICLE_ID_MATCH_MODES,
-)
-from apps.api.database.repositories.audit_repository import AuditRepository
-from apps.api.models.schemas import (
-    TripResponse, TripListResponse, TripDetailResponse, SuspectResponse, SuspectListResponse,
-    StatsResponse, AggregateRequest, ProcessRequest, DetectRequest,
-    RawTripResponse, RawTripListResponse, RawTripDetailResponse,
-    DetectEntryExitLLMRequest, LlmVehicleCompareResponse,
-    PassengerObuOverviewResponse, PassengerObuDailyStat, PassengerObuDailyStatListResponse,
-    PassengerObuAnomalyItem, PassengerObuAnomalyListResponse,
-)
 
 logger = get_logger(__name__)
 
@@ -56,28 +77,28 @@ async def get_stats():
 
 @router.get("/trips", response_model=TripListResponse)
 async def get_trips(
-    status: Optional[str] = None,
+    status: str | None = None,
     limit: int = 100,
     offset: int = 0,
-    entry_station: Optional[str] = None,
-    exit_station: Optional[str] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
+    entry_station: str | None = None,
+    exit_station: str | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
     # 车辆查询扩展参数
-    entry_vehicle_id: Optional[str] = None,
-    exit_vehicle_id: Optional[str] = None,
-    vehicle_id: Optional[str] = None,
-    vehicle_id_match: Optional[str] = None,
-    entry_obu_id: Optional[str] = None,
-    vehicle_type: Optional[int] = None,
-    vehicle_color: Optional[int] = None,
-    audit_status: Optional[str] = None,
-    min_risk_score: Optional[float] = None,
-    max_risk_score: Optional[float] = None,
-    min_gantry_count: Optional[int] = None,
-    max_gantry_count: Optional[int] = None,
-    order_by: Optional[str] = None,
-    order: Optional[str] = None,
+    entry_vehicle_id: str | None = None,
+    exit_vehicle_id: str | None = None,
+    vehicle_id: str | None = None,
+    vehicle_id_match: str | None = None,
+    entry_obu_id: str | None = None,
+    vehicle_type: int | None = None,
+    vehicle_color: int | None = None,
+    audit_status: str | None = None,
+    min_risk_score: float | None = None,
+    max_risk_score: float | None = None,
+    min_gantry_count: int | None = None,
+    max_gantry_count: int | None = None,
+    order_by: str | None = None,
+    order: str | None = None,
 ):
     """获取行程列表（支持任意车辆查询）"""
     # 入参校验
@@ -117,12 +138,24 @@ async def get_trips(
         "order_by": order_by or "entry_time",
         "order": order or "desc",
     }
-    trips = repo.get_trips(status=status, limit=limit, offset=offset,
-                           entry_station=entry_station, exit_station=exit_station,
-                           start_time=start_time, end_time=end_time, **extra)
-    total = repo.get_total_count(status=status,
-                                 entry_station=entry_station, exit_station=exit_station,
-                                 start_time=start_time, end_time=end_time, **extra)
+    trips = repo.get_trips(
+        status=status,
+        limit=limit,
+        offset=offset,
+        entry_station=entry_station,
+        exit_station=exit_station,
+        start_time=start_time,
+        end_time=end_time,
+        **extra,
+    )
+    total = repo.get_total_count(
+        status=status,
+        entry_station=entry_station,
+        exit_station=exit_station,
+        start_time=start_time,
+        end_time=end_time,
+        **extra,
+    )
     return TripListResponse(trips=trips, total=total, limit=limit, offset=offset)
 
 
@@ -146,9 +179,9 @@ async def get_trip_full(passid: str):
 
     # 查询出入口时间范围内的门架抓拍图片流水
     gantry_image_records = None
-    entry_vehicle = trip.get('entry_vehicle_id')
-    entry_time = trip.get('entry_time')
-    exit_time = trip.get('exit_time')
+    entry_vehicle = trip.get("entry_vehicle_id")
+    entry_time = trip.get("entry_time")
+    exit_time = trip.get("exit_time")
     if entry_vehicle and entry_time and exit_time:
         try:
             images = get_gantry_images_by_vehicle(entry_vehicle, entry_time, exit_time)
@@ -158,8 +191,8 @@ async def get_trip_full(passid: str):
             logger.error(f"Failed to query gantry images for trip {passid}: {e}")
 
     result = dict(trip)
-    result['gantry_image_records'] = gantry_image_records
-    result['audit_results'] = [SuspectResponse(**r) for r in results]
+    result["gantry_image_records"] = gantry_image_records
+    result["audit_results"] = [SuspectResponse(**r) for r in results]
     return TripDetailResponse(**result)
 
 
@@ -168,19 +201,19 @@ async def get_trip_full(passid: str):
 
 @router.get("/doris/vehicles", response_model=RawTripListResponse)
 async def list_doris_vehicles(
-    vehicle_id: Optional[str] = None,
-    vehicle_id_match: Optional[str] = None,
-    obu_id: Optional[str] = None,
-    vehicle_type: Optional[int] = None,
-    vehicle_color: Optional[int] = None,
-    entry_station_name: Optional[str] = None,
-    exit_station_name: Optional[str] = None,
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
-    min_gantry_count: Optional[int] = None,
-    max_gantry_count: Optional[int] = None,
-    order_by: Optional[str] = None,
-    order: Optional[str] = None,
+    vehicle_id: str | None = None,
+    vehicle_id_match: str | None = None,
+    obu_id: str | None = None,
+    vehicle_type: int | None = None,
+    vehicle_color: int | None = None,
+    entry_station_name: str | None = None,
+    exit_station_name: str | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+    min_gantry_count: int | None = None,
+    max_gantry_count: int | None = None,
+    order_by: str | None = None,
+    order: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ):
@@ -206,19 +239,19 @@ async def list_doris_vehicles(
         rows, total = await run_in_threadpool(
             doris_query_trips,
             {
-                'vehicle_id': (vehicle_id or '').strip().upper() if vehicle_id else '',
-                'vehicle_id_match': vehicle_id_match or 'exact',
-                'obu_id': (obu_id or '').strip() if obu_id else None,
-                'vehicle_type': vehicle_type,
-                'vehicle_color': vehicle_color,
-                'entry_station_name': (entry_station_name or '').strip() if entry_station_name else None,
-                'exit_station_name': (exit_station_name or '').strip() if exit_station_name else None,
-                'start_time': start_time,
-                'end_time': end_time,
-                'min_gantry_count': min_gantry_count,
-                'max_gantry_count': max_gantry_count,
-                'order_by': order_by or 'entry_time',
-                'order': order or 'desc',
+                "vehicle_id": (vehicle_id or "").strip().upper() if vehicle_id else "",
+                "vehicle_id_match": vehicle_id_match or "exact",
+                "obu_id": (obu_id or "").strip() if obu_id else None,
+                "vehicle_type": vehicle_type,
+                "vehicle_color": vehicle_color,
+                "entry_station_name": (entry_station_name or "").strip() if entry_station_name else None,
+                "exit_station_name": (exit_station_name or "").strip() if exit_station_name else None,
+                "start_time": start_time,
+                "end_time": end_time,
+                "min_gantry_count": min_gantry_count,
+                "max_gantry_count": max_gantry_count,
+                "order_by": order_by or "entry_time",
+                "order": order or "desc",
             },
             limit,
             offset,
@@ -256,13 +289,7 @@ async def get_doris_vehicle_full(passid: str):
 async def aggregate_trips(request: AggregateRequest, req: Request, background_tasks: BackgroundTasks):
     """启动批量聚合行程任务"""
     task_id = str(uuid.uuid4())
-    req.app.state.aggregation_tasks[task_id] = {
-        "status": "running",
-        "current": 0,
-        "total": 0,
-        "count": 0,
-        "passid": ""
-    }
+    req.app.state.aggregation_tasks[task_id] = {"status": "running", "current": 0, "total": 0, "count": 0, "passid": ""}
 
     def run_aggregation():
         aggregator = TripAggregator()
@@ -270,27 +297,28 @@ async def aggregate_trips(request: AggregateRequest, req: Request, background_ta
             total = aggregator.aggregate_recent_trips(
                 days=request.days,
                 limit=request.limit,
-                on_progress=lambda p: req.app.state.aggregation_tasks.update({task_id: {
-                    "status": "running",
-                    "current": p["current"],
-                    "total": p["total"],
-                    "count": p["count"],
-                    "passid": p["passid"]
-                }}),
-                run_detection=True
+                on_progress=lambda p: req.app.state.aggregation_tasks.update(
+                    {
+                        task_id: {
+                            "status": "running",
+                            "current": p["current"],
+                            "total": p["total"],
+                            "count": p["count"],
+                            "passid": p["passid"],
+                        }
+                    }
+                ),
+                run_detection=True,
             )
             req.app.state.aggregation_tasks[task_id] = {
                 "status": "completed",
                 "current": total,
                 "total": total,
                 "count": total,
-                "passid": ""
+                "passid": "",
             }
         except Exception as e:
-            req.app.state.aggregation_tasks[task_id] = {
-                "status": "error",
-                "message": str(e)
-            }
+            req.app.state.aggregation_tasks[task_id] = {"status": "error", "message": str(e)}
 
     background_tasks.add_task(run_aggregation)
     return {"task_id": task_id, "status": "started"}
@@ -314,6 +342,7 @@ async def stop_aggregation(task_id: str, request: Request):
 @router.get("/trips/aggregate/stream/{task_id}")
 async def stream_aggregation(task_id: str, request: Request):
     """SSE流式推送聚合进度"""
+
     async def event_generator():
         while True:
             if task_id in request.app.state.aggregation_tasks:
@@ -322,6 +351,7 @@ async def stream_aggregation(task_id: str, request: Request):
                 if status.get("status") in ["completed", "stopped", "error"]:
                     break
             import asyncio
+
             await asyncio.sleep(0.5)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -329,14 +359,14 @@ async def stream_aggregation(task_id: str, request: Request):
 
 @router.get("/suspects", response_model=SuspectListResponse)
 async def get_suspects(
-    fraud_types: Optional[list] = Query(None, description="欺诈类型列表（可重复或逗号分隔）"),
-    process_status: Optional[str] = None,
-    llm_result: Optional[str] = Query(None, description="same | different | pending"),
+    fraud_types: list | None = Query(None, description="欺诈类型列表（可重复或逗号分隔）"),
+    process_status: str | None = None,
+    llm_result: str | None = Query(None, description="same | different | pending"),
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
 ):
     """获取可疑记录列表"""
-    normalized_types: Optional[list] = None
+    normalized_types: list | None = None
     if fraud_types:
         flat: list = []
         for item in fraud_types:
@@ -349,10 +379,10 @@ async def get_suspects(
         if flat:
             normalized_types = flat
     repo = AuditRepository()
-    suspects = repo.get_suspects(fraud_types=normalized_types, process_status=process_status,
-                                 llm_result=llm_result, limit=limit, offset=offset)
-    total = repo.get_suspects_count(fraud_types=normalized_types, process_status=process_status,
-                                    llm_result=llm_result)
+    suspects = repo.get_suspects(
+        fraud_types=normalized_types, process_status=process_status, llm_result=llm_result, limit=limit, offset=offset
+    )
+    total = repo.get_suspects_count(fraud_types=normalized_types, process_status=process_status, llm_result=llm_result)
     return SuspectListResponse(suspects=suspects, total=total)
 
 
@@ -370,27 +400,28 @@ async def llm_verify_suspect(suspect_id: int):
     if not suspect:
         raise HTTPException(status_code=404, detail="Suspect not found")
 
-    passid = suspect.get('passid')
+    passid = suspect.get("passid")
     if not passid:
         raise HTTPException(status_code=400, detail="Suspect has no passid")
 
     result = await run_in_threadpool(compare_vehicles_by_passid, passid)
-    err = result.get('error') if isinstance(result, dict) else None
+    err = result.get("error") if isinstance(result, dict) else None
     if err:
-        if err == 'trip_not_found':
+        if err == "trip_not_found":
             raise HTTPException(status_code=404, detail=result)
-        if err == 'image_url_missing':
+        if err == "image_url_missing":
             raise HTTPException(status_code=400, detail=result)
         raise HTTPException(status_code=502, detail=result)
 
     from datetime import datetime, timezone
+
     repo.update_llm_verdict(
         suspect_id,
-        is_same=bool(result['is_same_vehicle']),
-        confidence=float(result['confidence']),
-        reason=str(result.get('reason', '')),
-        model=str(result.get('model', '')),
-        checked_at=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        is_same=bool(result["is_same_vehicle"]),
+        confidence=float(result["confidence"]),
+        reason=str(result.get("reason", "")),
+        model=str(result.get("model", "")),
+        checked_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     updated = repo.get_suspect_detail(suspect_id)
     return SuspectResponse(**dict(updated or {}))
@@ -406,9 +437,9 @@ async def get_suspect(suspect_id: int):
 
     # 查询出入口时间范围内的门架抓拍图片流水
     gantry_image_records = None
-    entry_vehicle = suspect.get('entry_vehicle_id')
-    entry_time = suspect.get('entry_time')
-    exit_time = suspect.get('exit_time')
+    entry_vehicle = suspect.get("entry_vehicle_id")
+    entry_time = suspect.get("entry_time")
+    exit_time = suspect.get("exit_time")
     if entry_vehicle and entry_time and exit_time:
         try:
             images = get_gantry_images_by_vehicle(entry_vehicle, entry_time, exit_time)
@@ -418,7 +449,7 @@ async def get_suspect(suspect_id: int):
             logger.error(f"Failed to query gantry images for suspect {suspect_id}: {e}")
 
     result = dict(suspect)
-    result['gantry_image_records'] = gantry_image_records
+    result["gantry_image_records"] = gantry_image_records
     return SuspectResponse(**result)
 
 
@@ -439,39 +470,44 @@ async def detect_passenger_obu(detect_req: DetectRequest):
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    from apps.api.services.passenger_obu_detector import detect_trip, FRAUD_TYPE
+    from apps.api.services.passenger_obu_detector import FRAUD_TYPE, detect_trip
 
     details = detect_trip(trip)
     if not details:
         return {"is_suspicious": False, "fraud_type": FRAUD_TYPE, "details": None}
 
     audit_repo = AuditRepository()
-    audit_repo.save_result({
-        'audit_trip_id': trip['id'],
-        'fraud_type': FRAUD_TYPE,
-        'entry_vehicle_type': details.get('entry_vehicle_type'),
-        'exit_vehicle_type': details.get('exit_vehicle_type'),
-        'is_suspicious': 1,
-        'risk_score': details.get('risk_score', 0.85),
-        'details': json.dumps({
-            'source_side': details.get('source_side'),
-            'entry_obu_id': details.get('entry_obu_id'),
-            'exit_obu_id': details.get('exit_obu_id'),
-            'entry_media_type': details.get('entry_media_type'),
-            'exit_media_type': details.get('exit_media_type'),
-            'entry_visual_type': details.get('entry_visual_type'),
-            'exit_visual_type': details.get('exit_visual_type'),
-            'visual_vehicle_type': details.get('visual_vehicle_type'),
-            'llm_verified': details.get('llm_verified'),
-            'llm_confidence': details.get('llm_confidence'),
-            'rule_version': 'v1',
-        }, ensure_ascii=False),
-    })
+    audit_repo.save_result(
+        {
+            "audit_trip_id": trip["id"],
+            "fraud_type": FRAUD_TYPE,
+            "entry_vehicle_type": details.get("entry_vehicle_type"),
+            "exit_vehicle_type": details.get("exit_vehicle_type"),
+            "is_suspicious": 1,
+            "risk_score": details.get("risk_score", 0.85),
+            "details": json.dumps(
+                {
+                    "source_side": details.get("source_side"),
+                    "entry_obu_id": details.get("entry_obu_id"),
+                    "exit_obu_id": details.get("exit_obu_id"),
+                    "entry_media_type": details.get("entry_media_type"),
+                    "exit_media_type": details.get("exit_media_type"),
+                    "entry_visual_type": details.get("entry_visual_type"),
+                    "exit_visual_type": details.get("exit_visual_type"),
+                    "visual_vehicle_type": details.get("visual_vehicle_type"),
+                    "llm_verified": details.get("llm_verified"),
+                    "llm_confidence": details.get("llm_confidence"),
+                    "rule_version": "v1",
+                },
+                ensure_ascii=False,
+            ),
+        }
+    )
 
     return {
-        'is_suspicious': True,
-        'fraud_type': FRAUD_TYPE,
-        'details': details,
+        "is_suspicious": True,
+        "fraud_type": FRAUD_TYPE,
+        "details": details,
     }
 
 
@@ -485,23 +521,25 @@ async def detect_entry_exit(detect_req: DetectRequest, request: Request):
         raise HTTPException(status_code=404, detail="Trip not found")
 
     matcher = get_entry_exit_matcher(request)
-    entry_record = {'image_license': trip.get('entry_image_license')}
-    exit_record = {'image_license': trip.get('exit_image_license')}
+    entry_record = {"image_license": trip.get("entry_image_license")}
+    exit_record = {"image_license": trip.get("exit_image_license")}
     result = matcher.compare(entry_record, exit_record)
-    
-    if result.get('is_suspicious'):
+
+    if result.get("is_suspicious"):
         audit_repo = AuditRepository()
-        audit_repo.save_result({
-            'audit_trip_id': trip['id'],
-            'fraud_type': 'ENTRY_EXIT_MISMATCH',
-            'entry_visual_type': result.get('entry_visual_type'),
-            'exit_visual_type': result.get('exit_visual_type'),
-            'entry_color': result.get('entry_color'),
-            'exit_color': result.get('exit_color'),
-            'is_suspicious': 1,
-            'risk_score': result.get('fingerprint_sim', 0),
-            'details': json.dumps(result)
-        })
+        audit_repo.save_result(
+            {
+                "audit_trip_id": trip["id"],
+                "fraud_type": "ENTRY_EXIT_MISMATCH",
+                "entry_visual_type": result.get("entry_visual_type"),
+                "exit_visual_type": result.get("exit_visual_type"),
+                "entry_color": result.get("entry_color"),
+                "exit_color": result.get("exit_color"),
+                "is_suspicious": 1,
+                "risk_score": result.get("fingerprint_sim", 0),
+                "details": json.dumps(result),
+            }
+        )
 
     return result
 
@@ -515,17 +553,17 @@ async def detect_entry_exit_with_llm(detect_req: DetectEntryExitLLMRequest):
     - 404：trip 在 Doris 中找不到
     - 502：图片下载失败 / MaaS 不可达 / 响应解析失败
     """
-    passid = (detect_req.passid or '').strip()
+    passid = (detect_req.passid or "").strip()
     if not passid:
         raise HTTPException(status_code=400, detail="passid required")
 
     result = await run_in_threadpool(compare_vehicles_by_passid, passid)
 
-    err = result.get('error')
+    err = result.get("error")
     if err:
-        if err == 'trip_not_found':
+        if err == "trip_not_found":
             raise HTTPException(status_code=404, detail=result)
-        if err == 'image_url_missing':
+        if err == "image_url_missing":
             raise HTTPException(status_code=400, detail=result)
         # image_download_failed / maas_unavailable / parse_error
         raise HTTPException(status_code=502, detail=result)
@@ -546,7 +584,7 @@ async def recognize_plate(image_url: str = Query(..., description="车牌图片 
 
     result = await run_in_threadpool(get_client().recognize_plate, image_url)
 
-    if isinstance(result, dict) and 'error' in result:
+    if isinstance(result, dict) and "error" in result:
         raise HTTPException(status_code=502, detail=result)
 
     return result
@@ -561,7 +599,7 @@ async def re_detect_trips(request: Request, background_tasks: BackgroundTasks):
         "current": 0,
         "total": 0,
         "count": 0,
-        "passid": ""
+        "passid": "",
     }
 
     def run_re_detect():
@@ -571,34 +609,36 @@ async def re_detect_trips(request: Request, background_tasks: BackgroundTasks):
         count = 0
 
         for i, trip in enumerate(trips):
-            trip_id = trip.get('id')
-            passid = trip.get('passid')
-            
+            trip_id = trip.get("id")
+            passid = trip.get("passid")
+
             # 跳过无效数据
             if not trip_id or not passid:
                 logger.warning("Skipping invalid trip record: %s", trip)
                 continue
-                
+
             results_to_save = []
 
-            if trip.get('entry_image_license') and trip.get('exit_image_license'):
+            if trip.get("entry_image_license") and trip.get("exit_image_license"):
                 try:
                     matcher = get_entry_exit_matcher(request)
-                    entry_rec = {'image_license': trip.get('entry_image_license')}
-                    exit_rec = {'image_license': trip.get('exit_image_license')}
+                    entry_rec = {"image_license": trip.get("entry_image_license")}
+                    exit_rec = {"image_license": trip.get("exit_image_license")}
                     r = matcher.compare(entry_rec, exit_rec)
-                    if r.get('_comparison_success') or r.get('fingerprint_sim'):
-                        results_to_save.append({
-                            'audit_trip_id': trip_id,
-                            'fraud_type': 'ENTRY_EXIT_MISMATCH',
-                            'entry_visual_type': r.get('entry_visual_type'),
-                            'exit_visual_type': r.get('exit_visual_type'),
-                            'entry_color': r.get('entry_color'),
-                            'exit_color': r.get('exit_color'),
-                            'is_suspicious': 1 if r.get('is_suspicious') else 0,
-                            'risk_score': r.get('fingerprint_sim', 0),
-                            'details': json.dumps(r)
-                        })
+                    if r.get("_comparison_success") or r.get("fingerprint_sim"):
+                        results_to_save.append(
+                            {
+                                "audit_trip_id": trip_id,
+                                "fraud_type": "ENTRY_EXIT_MISMATCH",
+                                "entry_visual_type": r.get("entry_visual_type"),
+                                "exit_visual_type": r.get("exit_visual_type"),
+                                "entry_color": r.get("entry_color"),
+                                "exit_color": r.get("exit_color"),
+                                "is_suspicious": 1 if r.get("is_suspicious") else 0,
+                                "risk_score": r.get("fingerprint_sim", 0),
+                                "details": json.dumps(r),
+                            }
+                        )
                 except Exception:
                     pass
 
@@ -615,7 +655,7 @@ async def re_detect_trips(request: Request, background_tasks: BackgroundTasks):
                 "current": i + 1,
                 "total": total,
                 "count": count,
-                "passid": trip['passid']
+                "passid": trip["passid"],
             }
 
         request.app.state.aggregation_tasks[task_id] = {
@@ -623,7 +663,7 @@ async def re_detect_trips(request: Request, background_tasks: BackgroundTasks):
             "current": total,
             "total": total,
             "count": count,
-            "passid": ""
+            "passid": "",
         }
 
     background_tasks.add_task(run_re_detect)
@@ -658,11 +698,11 @@ async def image_proxy(url: str = Query(...)):
             if r.status_code != 200:
                 raise HTTPException(status_code=r.status_code, detail="Upstream fetch failed")
             content_type = r.headers.get("content-type", "image/jpeg")
-            return Response(content=r.content, media_type=content_type, headers={
-                "Cache-Control": "public, max-age=300"
-            })
+            return Response(
+                content=r.content, media_type=content_type, headers={"Cache-Control": "public, max-age=300"}
+            )
     except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Fetch error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Fetch error: {e!s}")
 
 
 # ---- 客车 OBU 监测（PASSENGER_USES_TRUCK_OBU_NON_NEW_A）----
@@ -671,45 +711,46 @@ async def image_proxy(url: str = Query(...)):
 @router.get("/passenger-obu/overview", response_model=PassengerObuOverviewResponse)
 async def get_passenger_obu_overview():
     """顶部卡片：累计扫描 / 异常 / 待处理 / 已确认 + 最近 30 天趋势"""
-    from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
     from datetime import date, timedelta
+
+    from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
 
     stats_repo = TruckObuStatsRepository()
     overview = stats_repo.get_overview()
     pending = AuditRepository().get_suspects_count(
-        fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
-        process_status='UNPROCESSED',
+        fraud_type="PASSENGER_USES_TRUCK_OBU_NON_NEW_A",
+        process_status="UNPROCESSED",
     )
-    overview['total_pending'] = pending
-    overview['last_30_days'] = stats_repo.get_daily_stats(
+    overview["total_pending"] = pending
+    overview["last_30_days"] = stats_repo.get_daily_stats(
         from_date=(date.today() - timedelta(days=29)).isoformat(),
         to_date=date.today().isoformat(),
-        fraud_type='PASSENGER_USES_TRUCK_OBU_NON_NEW_A',
+        fraud_type="PASSENGER_USES_TRUCK_OBU_NON_NEW_A",
     )
     return PassengerObuOverviewResponse(**overview)
 
 
 @router.get("/passenger-obu/stats/daily", response_model=PassengerObuDailyStatListResponse)
 async def get_passenger_obu_daily_stats(
-    from_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
-    to_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
-    fraud_type: Optional[str] = Query(None, description="默认只取 PASSENGER_USES_TRUCK_OBU_NON_NEW_A"),
+    from_date: str | None = Query(None, description="YYYY-MM-DD"),
+    to_date: str | None = Query(None, description="YYYY-MM-DD"),
+    fraud_type: str | None = Query(None, description="默认只取 PASSENGER_USES_TRUCK_OBU_NON_NEW_A"),
 ):
     """每日统计（按 fraud_type 聚合）"""
     from apps.api.database.repositories.truck_obu_stats_repository import TruckObuStatsRepository
 
     stats_repo = TruckObuStatsRepository()
     if fraud_type is None:
-        fraud_type = 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A'
+        fraud_type = "PASSENGER_USES_TRUCK_OBU_NON_NEW_A"
     stats = stats_repo.get_daily_stats(from_date=from_date, to_date=to_date, fraud_type=fraud_type)
     items = [
         PassengerObuDailyStat(
-            date=r['date'],
-            fraud_type=r['fraud_type'],
-            scanned_count=r['scanned_count'],
-            suspicious_count=r['suspicious_count'],
-            confirmed_count=r['confirmed_count'],
-            last_run_at=r.get('last_run_at'),
+            date=r["date"],
+            fraud_type=r["fraud_type"],
+            scanned_count=r["scanned_count"],
+            suspicious_count=r["suspicious_count"],
+            confirmed_count=r["confirmed_count"],
+            last_run_at=r.get("last_run_at"),
         )
         for r in stats
     ]
@@ -718,25 +759,31 @@ async def get_passenger_obu_daily_stats(
 
 @router.get("/passenger-obu/anomalies", response_model=PassengerObuAnomalyListResponse)
 async def get_passenger_obu_anomalies(
-    process_status: Optional[str] = None,
-    llm_result: Optional[str] = None,
+    process_status: str | None = None,
+    llm_result: str | None = None,
+    sort_by: str = Query("exit_time", description="排序字段:exit_time / created_at / risk_score"),
     limit: int = 50,
     offset: int = 0,
 ):
-    """异常记录列表（复用 AuditRepository.get_suspects，仅过滤 fraud_types）"""
+    """异常记录列表（复用 AuditRepository.get_suspects，仅过滤 fraud_types）
+
+    sort_by 默认 exit_time DESC,白名单限定防止 SQL 注入。
+    """
     audit_repo = AuditRepository()
     rows = audit_repo.get_suspects(
-        fraud_types=['PASSENGER_USES_TRUCK_OBU_NON_NEW_A'],
+        fraud_types=["PASSENGER_USES_TRUCK_OBU_NON_NEW_A"],
         process_status=process_status,
         llm_result=llm_result,
-        limit=limit, offset=offset,
+        sort_by=sort_by,
+        limit=limit,
+        offset=offset,
     )
     total = audit_repo.get_suspects_count(
-        fraud_types=['PASSENGER_USES_TRUCK_OBU_NON_NEW_A'],
+        fraud_types=["PASSENGER_USES_TRUCK_OBU_NON_NEW_A"],
         process_status=process_status,
         llm_result=llm_result,
     )
-    items: List[PassengerObuAnomalyItem] = []
+    items: list[PassengerObuAnomalyItem] = []
     for r in rows:
         source_side = None
         entry_obu_id = None
@@ -746,47 +793,54 @@ async def get_passenger_obu_anomalies(
         visual_vehicle_type = None
         llm_verified = None
         llm_confidence = None
+        llm_call_status = None
         entry_image_trans = None
         exit_image_trans = None
-        if r.get('details'):
+        if r.get("details"):
             try:
-                d = json.loads(r['details']) if isinstance(r['details'], str) else r['details']
-                source_side = d.get('source_side')
-                entry_obu_id = d.get('entry_obu_id')
-                exit_obu_id = d.get('exit_obu_id')
-                entry_media_type = d.get('entry_media_type')
-                exit_media_type = d.get('exit_media_type')
-                visual_vehicle_type = d.get('visual_vehicle_type')
-                llm_verified = d.get('llm_verified')
-                llm_confidence = d.get('llm_confidence')
-                entry_image_trans = d.get('entry_image_trans')
-                exit_image_trans = d.get('exit_image_trans')
+                d = json.loads(r["details"]) if isinstance(r["details"], str) else r["details"]
+                source_side = d.get("source_side")
+                entry_obu_id = d.get("entry_obu_id")
+                exit_obu_id = d.get("exit_obu_id")
+                entry_media_type = d.get("entry_media_type")
+                exit_media_type = d.get("exit_media_type")
+                visual_vehicle_type = d.get("visual_vehicle_type")
+                llm_verified = d.get("llm_verified")
+                llm_confidence = d.get("llm_confidence")
+                llm_call_status = d.get("llm_call_status")
+                entry_image_trans = d.get("entry_image_trans")
+                exit_image_trans = d.get("exit_image_trans")
             except Exception:
                 pass
-        items.append(PassengerObuAnomalyItem(
-            id=r['id'], audit_trip_id=r['audit_trip_id'],
-            fraud_type=r['fraud_type'], passid=r.get('passid'),
-            entry_time=r.get('entry_time'), exit_time=r.get('exit_time'),
-            entry_station_name=r.get('entry_station_name'),
-            exit_station_name=r.get('exit_station_name'),
-            entry_vehicle_id=r.get('entry_vehicle_id'),
-            exit_vehicle_id=r.get('exit_vehicle_id'),
-            entry_vehicle_type=r.get('entry_vehicle_type'),
-            exit_vehicle_type=r.get('exit_vehicle_type'),
-            entry_obu_id=entry_obu_id,
-            exit_obu_id=exit_obu_id,
-            entry_media_type=entry_media_type,
-            exit_media_type=exit_media_type,
-            risk_score=r.get('risk_score', 0.85),
-            process_status=r.get('process_status', 'UNPROCESSED'),
-            details=r.get('details'),
-            source_side=source_side,
-            visual_vehicle_type=visual_vehicle_type,
-            llm_verified=llm_verified,
-            llm_confidence=llm_confidence,
-            entry_image_trans=entry_image_trans,
-            exit_image_trans=exit_image_trans,
-            created_at=r.get('created_at'),
-        ))
-    return PassengerObuAnomalyListResponse(anomalies=items, total=total,
-                                           limit=limit, offset=offset)
+        items.append(
+            PassengerObuAnomalyItem(
+                id=r["id"],
+                audit_trip_id=r["audit_trip_id"],
+                fraud_type=r["fraud_type"],
+                passid=r.get("passid"),
+                entry_time=r.get("entry_time"),
+                exit_time=r.get("exit_time"),
+                entry_station_name=r.get("entry_station_name"),
+                exit_station_name=r.get("exit_station_name"),
+                entry_vehicle_id=r.get("entry_vehicle_id"),
+                exit_vehicle_id=r.get("exit_vehicle_id"),
+                entry_vehicle_type=r.get("entry_vehicle_type"),
+                exit_vehicle_type=r.get("exit_vehicle_type"),
+                entry_obu_id=entry_obu_id,
+                exit_obu_id=exit_obu_id,
+                entry_media_type=entry_media_type,
+                exit_media_type=exit_media_type,
+                risk_score=r.get("risk_score", 0.85),
+                process_status=r.get("process_status", "UNPROCESSED"),
+                details=r.get("details"),
+                source_side=source_side,
+                visual_vehicle_type=visual_vehicle_type,
+                llm_verified=llm_verified,
+                llm_confidence=llm_confidence,
+                llm_call_status=llm_call_status,
+                entry_image_trans=entry_image_trans,
+                exit_image_trans=exit_image_trans,
+                created_at=r.get("created_at"),
+            )
+        )
+    return PassengerObuAnomalyListResponse(anomalies=items, total=total, limit=limit, offset=offset)

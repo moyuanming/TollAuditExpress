@@ -13,8 +13,13 @@ import pytest
 from apps.api.services.passenger_obu_detector import (
     DECLARED_VEHICLE_TYPE,
     FRAUD_TYPE,
+    LLM_CALL_STATUS_CALLED_CONFIRMED,
+    LLM_CALL_STATUS_CALLED_REJECTED,
+    LLM_CALL_STATUS_NOT_CALLED,
+    LLM_CALL_STATUS_SERVICE_ERROR,
     NON_NEW_A_PREFIX,
     TRUCK_VISUAL_TYPES,
+    _worst_llm_call_status,
     detect_trip,
 )
 
@@ -377,3 +382,117 @@ class TestEdgeCases:
         mock_ai_client.truck_obu.return_value = _hit_response()
         result = detect_trip(trip)
         assert result is not None
+
+
+# ============================================================
+# llm_call_status — 表格四态可见性
+# ============================================================
+
+
+class TestLlmCallStatusConstants:
+    def test_constants_values_match_frontend(self):
+        """前端 JSX 字面量必须与后端常量一一对应。"""
+        assert LLM_CALL_STATUS_CALLED_CONFIRMED == "called_confirmed"
+        assert LLM_CALL_STATUS_CALLED_REJECTED == "called_rejected"
+        assert LLM_CALL_STATUS_NOT_CALLED == "not_called"
+        assert LLM_CALL_STATUS_SERVICE_ERROR == "service_error"
+
+
+class TestWorstLlmCallStatusHelper:
+    def test_all_none_returns_none(self):
+        assert _worst_llm_call_status(None, None) is None
+
+    def test_empty_args_returns_none(self):
+        assert _worst_llm_call_status() is None
+
+    def test_single_returns_itself(self):
+        assert _worst_llm_call_status("called_confirmed") == "called_confirmed"
+
+    def test_worst_of_mixed(self):
+        """service_error 严重度最高,胜过 called_rejected / not_called / called_confirmed"""
+        result = _worst_llm_call_status(
+            "called_confirmed",
+            "called_rejected",
+            "not_called",
+            "service_error",
+        )
+        assert result == "service_error"
+
+    def test_worst_ignores_none(self):
+        assert _worst_llm_call_status(None, "called_rejected", None) == "called_rejected"
+
+    def test_unknown_value_falls_through(self):
+        """未知字符串按 0 严重度处理,被有效值覆盖。"""
+        assert _worst_llm_call_status("bogus", "called_confirmed") == "called_confirmed"
+
+
+class TestLlmCallStatusFromDetectTrip:
+    def test_single_side_called_confirmed(self, mock_ai_client):
+        """LLM 真判了是货车 → called_confirmed"""
+        trip = _base_trip()
+        mock_ai_client.truck_obu.return_value = _hit_response(llm_verified=True)
+        result = detect_trip(trip)
+        assert result is not None
+        assert result["llm_call_status"] == "called_confirmed"
+        assert result["llm_verified"] is True
+
+    def test_single_side_called_rejected(self, mock_ai_client):
+        """is_suspicious=True 但 llm_verified=False(ML 高自信或 LLM 判否)→ called_rejected
+
+        业务现状:detector 不再把 llm_verified 当硬门坎,只要 is_suspicious 就写嫌疑行。
+        llm_call_status 用来区分这次到底调没调 LLM / LLM 怎么判的。
+        """
+        trip = _base_trip()
+        mock_ai_client.truck_obu.return_value = _hit_response(
+            llm_verified=False,
+            llm_confidence=0.10,
+        )
+        result = detect_trip(trip)
+        assert result is not None
+        assert result["llm_call_status"] == "called_rejected"
+        assert result["llm_verified"] is False
+
+    def test_dual_side_both_confirmed(self, mock_ai_client):
+        """双侧都 called_confirmed → 整体 called_confirmed"""
+        trip = _base_trip(
+            exit_vehicle_type=1,
+            exit_vehicle_id="川A12345",
+            exit_image_trans="http://example.com/exit_trans.jpg",
+            exit_obu_id="OBU002",
+            exit_media_type=1,
+        )
+        mock_ai_client.truck_obu.side_effect = [
+            _hit_response(llm_verified=True),
+            _hit_response(llm_verified=True),
+        ]
+        result = detect_trip(trip)
+        assert result is not None
+        assert result["source_side"] == "BOTH"
+        assert result["llm_call_status"] == "called_confirmed"
+
+    def test_dual_side_worst_status_wins(self, mock_ai_client):
+        """一侧 called_confirmed + 一侧 called_rejected → 整体 called_rejected"""
+        trip = _base_trip(
+            exit_vehicle_type=1,
+            exit_vehicle_id="川A12345",
+            exit_image_trans="http://example.com/exit_trans.jpg",
+            exit_obu_id="OBU002",
+            exit_media_type=1,
+        )
+        mock_ai_client.truck_obu.side_effect = [
+            _hit_response(llm_verified=True),
+            _hit_response(llm_verified=False, llm_confidence=0.10),
+        ]
+        result = detect_trip(trip)
+        assert result is not None
+        assert result["llm_call_status"] == "called_rejected"
+
+    def test_service_error_drops_trip_without_writing_status(self, mock_ai_client):
+        """vehicle-ai-service 返回 error → 整条 trip drop,不会写出 service_error 记录
+
+        当前 contract 保留 drop 行为:脏数据不进 audit_results。
+        """
+        trip = _base_trip()
+        mock_ai_client.truck_obu.return_value = {"error": "service_unavailable"}
+        result = detect_trip(trip)
+        assert result is None

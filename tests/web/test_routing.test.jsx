@@ -81,15 +81,16 @@ describe('路由拆分', () => {
     renderAt('/trips')
     // LegacyRedirect → /app/trips → 进入 /app/* 分支
     // → AuthGuard(moked) 渲染 children → AppNav + Dashboard
-    // AppNav 里有 <NavLink to="/app/trips">🚗 行程查询</NavLink>
-    const link = screen.getByRole('link', { name: '🚗 行程查询' })
+    // AppNav 里有 <NavLink to="/app/trips"><Icon/>行程查询</NavLink>
+    // Icon 是 aria-hidden=true 的 SVG,可访问名 = "行程查询"
+    const link = screen.getByRole('link', { name: '行程查询' })
     expect(link).toBeInTheDocument()
     expect(link.getAttribute('href')).toBe('/app/trips')
   })
 
   it('老路径 /vehicles 重定向后,nav 上的车辆查询链接 href 指向 /app/vehicles', () => {
     renderAt('/vehicles')
-    const link = screen.getByRole('link', { name: '🔎 车辆查询' })
+    const link = screen.getByRole('link', { name: '车辆查询' })
     expect(link).toBeInTheDocument()
     expect(link.getAttribute('href')).toBe('/app/vehicles')
   })

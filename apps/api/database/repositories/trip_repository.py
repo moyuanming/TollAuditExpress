@@ -1,17 +1,19 @@
 """行程数据访问层"""
 
-from typing import Optional, List, Dict, Tuple
 from datetime import datetime
 
-from apps.api.database.doris_connection import get_connection
 from apps.api.core.logging_config import get_logger
+from apps.api.database.doris_connection import get_connection
 
 logger = get_logger(__name__)
 
 
 # 允许排序的列名（防 SQL 注入）
 SORTABLE_COLUMNS = {
-    "entry_time", "exit_time", "risk_score", "gantry_count",
+    "entry_time",
+    "exit_time",
+    "risk_score",
+    "gantry_count",
 }
 
 # 车辆类型合法值
@@ -21,7 +23,7 @@ VEHICLE_TYPE_VALUES = {1, 2}
 VEHICLE_ID_MATCH_MODES = {"exact", "prefix", "contains"}
 
 
-def _build_where(filters: dict) -> Tuple[str, list]:
+def _build_where(filters: dict) -> tuple[str, list]:
     """根据过滤条件构造 WHERE 子句与绑定参数。
 
     支持的过滤键：
@@ -135,10 +137,17 @@ def _resolve_order(filters: dict) -> str:
 class TripRepository:
     """行程仓储"""
 
-    def get_trips(self, status: Optional[str] = None, limit: int = 100, offset: int = 0,
-                  entry_station: Optional[str] = None, exit_station: Optional[str] = None,
-                  start_time: Optional[str] = None, end_time: Optional[str] = None,
-                  **kwargs) -> List[Dict]:
+    def get_trips(
+        self,
+        status: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        entry_station: str | None = None,
+        exit_station: str | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        **kwargs,
+    ) -> list[dict]:
         """获取行程列表。
 
         兼容旧签名（status/entry_station/...），同时支持通过 kwargs 传入新过滤参数。
@@ -162,10 +171,15 @@ class TripRepository:
             cursor.execute(sql, params)
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_total_count(self, status: Optional[str] = None,
-                        entry_station: Optional[str] = None, exit_station: Optional[str] = None,
-                        start_time: Optional[str] = None, end_time: Optional[str] = None,
-                        **kwargs) -> int:
+    def get_total_count(
+        self,
+        status: str | None = None,
+        entry_station: str | None = None,
+        exit_station: str | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        **kwargs,
+    ) -> int:
         """获取行程总数（与 get_trips 的过滤参数保持一致）。"""
         filters = {
             "status": status,
@@ -181,16 +195,16 @@ class TripRepository:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(sql, params)
-            return cursor.fetchone()['count']
+            return cursor.fetchone()["count"]
 
-    def get_trip_detail(self, passid: str) -> Optional[Dict]:
+    def get_trip_detail(self, passid: str) -> dict | None:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM audit_trips WHERE passid = %s", (passid,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def get_trip_detail_with_results(self, passid: str) -> Tuple[Optional[Dict], List[Dict]]:
+    def get_trip_detail_with_results(self, passid: str) -> tuple[dict | None, list[dict]]:
         """获取行程详情 + 该行程关联的所有稽核结果（JOIN 后字段齐全，可直接喂给 SuspectResponse）。
 
         返回 (trip_dict, [result_dict, ...])，若 trip 不存在则 trip_dict 为 None。
@@ -202,7 +216,8 @@ class TripRepository:
             if not trip_row:
                 return None, []
             trip = dict(trip_row)
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT ar.*, at.passid, at.entry_time, at.exit_time,
                        at.entry_station_name, at.exit_station_name,
                        at.entry_lane_id, at.exit_lane_id,
@@ -218,11 +233,13 @@ class TripRepository:
                 JOIN audit_trips at ON ar.audit_trip_id = at.id
                 WHERE ar.audit_trip_id = %s
                 ORDER BY ar.id
-            """, (trip['id'],))
+            """,
+                (trip["id"],),
+            )
             results = [dict(r) for r in cursor.fetchall()]
             return trip, results
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> dict:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -235,7 +252,7 @@ class TripRepository:
             """)
             return dict(cursor.fetchone())
 
-    def save_trip(self, trip_data: Dict) -> int:
+    def save_trip(self, trip_data: dict) -> int:
         with get_connection() as conn:
             cursor = conn.cursor()
 
@@ -253,38 +270,50 @@ class TripRepository:
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
 
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             values = (
-                trip_data.get('passid'),
-                trip_data.get('entry_time'), trip_data.get('entry_station_name'), trip_data.get('entry_lane_id'),
-                trip_data.get('entry_vehicle_id'), trip_data.get('entry_vehicle_type'), trip_data.get('entry_vehicle_color'),
-                trip_data.get('entry_obu_id'), trip_data.get('entry_media_type'),
-                trip_data.get('entry_image_license'), trip_data.get('entry_image_trans'),
-                trip_data.get('exit_time'), trip_data.get('exit_station_name'), trip_data.get('exit_lane_id'),
-                trip_data.get('exit_vehicle_id'), trip_data.get('exit_vehicle_type'), trip_data.get('exit_vehicle_color'),
-                trip_data.get('exit_obu_id'), trip_data.get('exit_media_type'),
-                trip_data.get('exit_image_license'), trip_data.get('exit_image_trans'),
-                trip_data.get('gantry_count', 0),
-                trip_data.get('gantry_records'),
-                trip_data.get('audit_status', 'PENDING'),
-                trip_data.get('risk_score', 0),
+                trip_data.get("passid"),
+                trip_data.get("entry_time"),
+                trip_data.get("entry_station_name"),
+                trip_data.get("entry_lane_id"),
+                trip_data.get("entry_vehicle_id"),
+                trip_data.get("entry_vehicle_type"),
+                trip_data.get("entry_vehicle_color"),
+                trip_data.get("entry_obu_id"),
+                trip_data.get("entry_media_type"),
+                trip_data.get("entry_image_license"),
+                trip_data.get("entry_image_trans"),
+                trip_data.get("exit_time"),
+                trip_data.get("exit_station_name"),
+                trip_data.get("exit_lane_id"),
+                trip_data.get("exit_vehicle_id"),
+                trip_data.get("exit_vehicle_type"),
+                trip_data.get("exit_vehicle_color"),
+                trip_data.get("exit_obu_id"),
+                trip_data.get("exit_media_type"),
+                trip_data.get("exit_image_license"),
+                trip_data.get("exit_image_trans"),
+                trip_data.get("gantry_count", 0),
+                trip_data.get("gantry_records"),
+                trip_data.get("audit_status", "PENDING"),
+                trip_data.get("risk_score", 0),
                 now,
-                trip_data.get('entry_visual_type'),
-                trip_data.get('exit_visual_type'),
-                trip_data.get('fingerprint_sim'),
-                now
+                trip_data.get("entry_visual_type"),
+                trip_data.get("exit_visual_type"),
+                trip_data.get("fingerprint_sim"),
+                now,
             )
 
             cursor.execute(sql, values)
             trip_id = cursor.lastrowid
             if not trip_id:
-                cursor.execute("SELECT id FROM audit_trips WHERE passid = %s", (trip_data.get('passid'),))
+                cursor.execute("SELECT id FROM audit_trips WHERE passid = %s", (trip_data.get("passid"),))
                 row = cursor.fetchone()
-                trip_id = row['id'] if row else None
+                trip_id = row["id"] if row else None
             conn.commit()
             return trip_id
 
-    def save_trip_with_detection_results(self, trip_id: int, passid: str, results: List[Dict]):
+    def save_trip_with_detection_results(self, trip_id: int, passid: str, results: list[dict]):
         """在单个事务中保存稽核检测结果、更新行程视觉类型和状态"""
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -292,47 +321,50 @@ class TripRepository:
             # 验证 trip_id 和 passid 的一致性，防止数据不一致
             cursor.execute("SELECT id, passid FROM audit_trips WHERE passid = %s", (passid,))
             existing = cursor.fetchone()
-            if existing and existing['id'] != trip_id:
+            if existing and existing["id"] != trip_id:
                 # 如果 trip_id 不匹配，以 passid 对应的实际 id 为准
-                trip_id = existing['id']
+                trip_id = existing["id"]
             elif not existing:
                 logger.warning("No audit_trip found for passid: %s, trip_id: %s", passid, trip_id)
 
             # 1. INSERT audit_results
             for r in results:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO audit_results (
                         audit_trip_id, fraud_type,
                         entry_vehicle_type, entry_visual_type, entry_color,
                         exit_vehicle_type, exit_visual_type, exit_color,
                         is_suspicious, risk_score, details, process_status
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    trip_id,  # 使用验证后的 trip_id，保证数据一致性
-                    r.get('fraud_type'),
-                    r.get('entry_vehicle_type'),
-                    r.get('entry_visual_type'),
-                    r.get('entry_color'),
-                    r.get('exit_vehicle_type'),
-                    r.get('exit_visual_type'),
-                    r.get('exit_color'),
-                    r.get('is_suspicious', 0),
-                    r.get('risk_score', 0),
-                    r.get('details'),
-                    r.get('process_status', 'UNPROCESSED')
-                ))
+                """,
+                    (
+                        trip_id,  # 使用验证后的 trip_id，保证数据一致性
+                        r.get("fraud_type"),
+                        r.get("entry_vehicle_type"),
+                        r.get("entry_visual_type"),
+                        r.get("entry_color"),
+                        r.get("exit_vehicle_type"),
+                        r.get("exit_visual_type"),
+                        r.get("exit_color"),
+                        r.get("is_suspicious", 0),
+                        r.get("risk_score", 0),
+                        r.get("details"),
+                        r.get("process_status", "UNPROCESSED"),
+                    ),
+                )
 
             # 2. Collect and UPDATE visual types
             entry_vis = None
             exit_vis = None
             fp_sim = None
             for r in results:
-                if r['fraud_type'] == 'PASSENGER_USES_TRUCK_OBU_NON_NEW_A':
-                    entry_vis = r.get('entry_visual_type')
-                elif r['fraud_type'] == 'ENTRY_EXIT_MISMATCH':
-                    entry_vis = r.get('entry_visual_type') or entry_vis
-                    exit_vis = r.get('exit_visual_type')
-                    fp_sim = r.get('risk_score')
+                if r["fraud_type"] == "PASSENGER_USES_TRUCK_OBU_NON_NEW_A":
+                    entry_vis = r.get("entry_visual_type")
+                elif r["fraud_type"] == "ENTRY_EXIT_MISMATCH":
+                    entry_vis = r.get("entry_visual_type") or entry_vis
+                    exit_vis = r.get("exit_visual_type")
+                    fp_sim = r.get("risk_score")
 
             updates = []
             values = []
@@ -349,39 +381,38 @@ class TripRepository:
             if updates:
                 values.append(passid)
                 cursor.execute(
-                    f"UPDATE audit_trips SET {', '.join(updates)}, updated_at = NOW() WHERE passid = %s",
-                    values
+                    f"UPDATE audit_trips SET {', '.join(updates)}, updated_at = NOW() WHERE passid = %s", values
                 )
 
             # 3. Update trip status
-            if any(r['is_suspicious'] for r in results):
-                max_risk = max(r['risk_score'] for r in results)
+            if any(r["is_suspicious"] for r in results):
+                max_risk = max(r["risk_score"] for r in results)
                 cursor.execute(
                     "UPDATE audit_trips SET audit_status = %s, risk_score = %s, updated_at = NOW() WHERE passid = %s",
-                    ('SUSPECTED', max_risk, passid)
+                    ("SUSPECTED", max_risk, passid),
                 )
 
             conn.commit()
 
-    def get_trips_without_visual(self, limit: int = 500) -> List[Dict]:
+    def get_trips_without_visual(self, limit: int = 500) -> list[dict]:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT * FROM audit_trips WHERE entry_visual_type IS NULL AND entry_image_trans IS NOT NULL AND entry_image_trans != '' AND entry_image_trans NOT LIKE '%None%' LIMIT %s",
-                (limit,)
+                (limit,),
             )
             return [dict(row) for row in cursor.fetchall()]
 
     def find_truck_obu_candidates(
         self,
-        vehicle_types: List[int],
+        vehicle_types: list[int],
         media_type: int,
         plate_prefix_exclude: str,
         start_time: str,
         end_time: str,
         limit: int = 500,
         offset: int = 0,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """查询货车+OBU+非新A 的候选 trip（带分页）。
 
         任一侧（入口/出口）满足以下三条即视为候选:
@@ -415,10 +446,16 @@ class TripRepository:
             LIMIT %s OFFSET %s
         """
         params = [
-            start_time, end_time,
-            *vehicle_types, media_type, f"{plate_prefix_exclude}%",
-            *vehicle_types, media_type, f"{plate_prefix_exclude}%",
-            limit, offset,
+            start_time,
+            end_time,
+            *vehicle_types,
+            media_type,
+            f"{plate_prefix_exclude}%",
+            *vehicle_types,
+            media_type,
+            f"{plate_prefix_exclude}%",
+            limit,
+            offset,
         ]
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -429,25 +466,31 @@ class TripRepository:
         self,
         start_time: str,
         end_time: str,
-        plate_prefix_exclude: str = '新A',
+        plate_prefix_exclude: str = "新A",
         declared_vehicle_type: int = 1,
         limit: int = 500,
         offset: int = 0,
-    ) -> List[Dict]:
-        """DEPRECATED: Use doris_trip_query.find_passenger_obu_candidates_doris instead.
+    ) -> list[dict]:
+        """客车 OBU 候选筛选:委托给 doris_trip_query 直查源表。
 
-        本方法查 audit_trips 聚合表，缺少 MEDIATYPE 过滤且依赖预聚合步骤。
-        新方法直接查 t_waste_en_ex_gantry 原始表，含 VEHICLETYPE + MEDIATYPE + 车牌过滤。
-
-        查询客车+非新A+任一侧有 image_trans 的候选 trip（带分页）。
+        直接走 dwd_tolldata.t_waste_en_ex_gantry 原始表,包含 VEHICLETYPE + MEDIATYPE
+        + 车牌前缀过滤,不依赖 audit_trips 预聚合步骤。
 
         命中后还会进一步走 vehicle-ai-service 复核 + LLM 验证(在 detector 层)。
         这里只做 SQL 预筛,省一次模型调用。
-
-        注：专用查询,不走通用 _build_where,后者 vehicle_type 过滤只支持 {1, 2},
-        不支持形参化 declared_vehicle_type。
         """
-        sql = f"""
+        from apps.api.services.doris_trip_query import find_passenger_obu_candidates_doris
+
+        return find_passenger_obu_candidates_doris(
+            start_time=start_time,
+            end_time=end_time,
+            plate_prefix_exclude=plate_prefix_exclude,
+            declared_vehicle_type=declared_vehicle_type,
+            media_type=1,
+            limit=limit,
+            offset=offset,
+        )
+        sql = """
             SELECT id, passid, entry_time, exit_time,
                    entry_vehicle_id, exit_vehicle_id,
                    entry_vehicle_type, exit_vehicle_type,
@@ -475,12 +518,18 @@ class TripRepository:
             LIMIT %s OFFSET %s
         """
         prefix = f"{plate_prefix_exclude}%"
-        none_pat = '%None%'
+        none_pat = "%None%"
         params = [
-            start_time, end_time,
-            declared_vehicle_type, prefix, none_pat,
-            declared_vehicle_type, prefix, none_pat,
-            limit, offset,
+            start_time,
+            end_time,
+            declared_vehicle_type,
+            prefix,
+            none_pat,
+            declared_vehicle_type,
+            prefix,
+            none_pat,
+            limit,
+            offset,
         ]
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -492,11 +541,13 @@ class TripRepository:
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE audit_trips SET audit_status = %s, risk_score = %s, updated_at = NOW() WHERE passid = %s",
-                (status, risk_score, passid)
+                (status, risk_score, passid),
             )
             conn.commit()
 
-    def update_visual_types(self, passid: str, entry_visual_type: str = None, exit_visual_type: str = None, fingerprint_sim: float = None):
+    def update_visual_types(
+        self, passid: str, entry_visual_type: str = None, exit_visual_type: str = None, fingerprint_sim: float = None
+    ):
         with get_connection() as conn:
             cursor = conn.cursor()
             updates = []
@@ -514,7 +565,6 @@ class TripRepository:
             if updates:
                 values.append(passid)
                 cursor.execute(
-                    f"UPDATE audit_trips SET {', '.join(updates)}, updated_at = NOW() WHERE passid = %s",
-                    values
+                    f"UPDATE audit_trips SET {', '.join(updates)}, updated_at = NOW() WHERE passid = %s", values
                 )
                 conn.commit()
