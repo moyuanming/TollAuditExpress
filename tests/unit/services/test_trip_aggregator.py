@@ -249,6 +249,30 @@ class TestGetGantryImagesByVehicle:
         assert "LIMIT" in sql.upper(), f"SQL must include LIMIT to bound response size. Got: {sql}"
         assert 200 in params, f"params must include a limit value (200). Got: {params}"
 
+    @patch("apps.api.services.trip_aggregator.pymysql")
+    @patch("apps.api.services.trip_aggregator.HAS_PYMYSQL", True)
+    def test_uses_tight_timeouts_on_user_click_hot_path(self, mock_pymysql):
+        """gantry image fetch is on the user-click hot path for the OBU monitor
+        detail panel, so it needs tighter timeouts than the shared DB_CONFIG
+        (which defaults to connect_timeout=15, read_timeout=30)."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pymysql.connect.return_value = mock_conn
+        mock_pymysql.cursors.DictCursor = "DictCursor"
+        mock_cursor.fetchall.return_value = []
+
+        get_gantry_images_by_vehicle("京A1", "2026-06-14", "2026-06-15")
+
+        call_kwargs = mock_pymysql.connect.call_args.kwargs
+        # 用户点击热路径上,30s read_timeout 太长,必须 <= 10s
+        assert (
+            call_kwargs.get("read_timeout", 999) <= 10
+        ), f"read_timeout should be <= 10s on hot path, got {call_kwargs.get('read_timeout')}"
+        assert (
+            call_kwargs.get("connect_timeout", 999) <= 10
+        ), f"connect_timeout should be <= 10s on hot path, got {call_kwargs.get('connect_timeout')}"
+
 
 # ============================================================
 # serialize_gantry_image_records / serialize_gantry_records

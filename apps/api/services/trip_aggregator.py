@@ -135,7 +135,10 @@ def get_gantry_images_by_vehicle(vehicle_id: str, entry_time, exit_time, vehicle
         return []
 
     try:
-        conn = pymysql.connect(**DB_CONFIG)
+        # 详情页在用户点击热路径上,使用比共享 DB_CONFIG 更紧的超时,
+        # 避免远端源库网络抖动时让前端 fetch 长时间 pending。
+        conn_config = {**DB_CONFIG, "connect_timeout": 5, "read_timeout": 10}
+        conn = pymysql.connect(**conn_config)
         cursor = conn.cursor(pymysql.cursors.DictCursor)
     except Exception as e:
         logger.error(f"Failed to connect to DB for gantry images: {e}")
