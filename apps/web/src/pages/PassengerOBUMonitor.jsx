@@ -377,6 +377,12 @@ function PassengerOBUMonitor() {
               <button className="detail-close" onClick={closeDetail}></button>
             </div>
 
+            {!selectedDetail.entry_vehicle_id && selectedDetail.exit_vehicle_id && (
+              <div className="alert alert-warning m-3 mb-0">
+                <span>此记录缺少入口数据(车辆/站点/时间),仅展示出口侧信息</span>
+              </div>
+            )}
+
             <div className="detail-body">
               {detailLoading ? (
                 <div className="text-center p-4">
