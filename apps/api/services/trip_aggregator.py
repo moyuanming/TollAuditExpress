@@ -71,7 +71,7 @@ def build_gantry_image_url(record: dict) -> str | None:
     return f"{GANTRY_IMAGE_BASE}?pic_id={pic_id}&vchicle={urllib.parse.quote(str(plate))}&vehicle_color={color}"
 
 
-def get_gantry_image_match(record: dict, time_window: int = None) -> int | None:
+def get_gantry_image_match(record: dict, time_window: int | None = None) -> int | None:
     """为一条门架交易流水记录查找匹配的门架抓拍图片记录。
 
     匹配规则：
@@ -142,6 +142,8 @@ def get_gantry_images_by_vehicle(vehicle_id: str, entry_time, exit_time, vehicle
         return []
 
     try:
+        # 详情页在用户点击热路径上,大流量车辆可能返回数千行,
+        # 用 LIMIT 限制返回数量,避免返回多 MB 响应让前端长时间转圈。
         sql = """
         SELECT
             ID, GRANTRY_ID, VEHICLEID, VEHICLECOLOR, CAPTURETIME
@@ -150,9 +152,11 @@ def get_gantry_images_by_vehicle(vehicle_id: str, entry_time, exit_time, vehicle
           AND CAPTURETIME >= %s
           AND CAPTURETIME <= %s
         ORDER BY CAPTURETIME
+        LIMIT %s
         """
 
-        cursor.execute(sql, (vehicle_id, entry_time, exit_time))
+        max_records = 200
+        cursor.execute(sql, (vehicle_id, entry_time, exit_time, max_records))
         results = cursor.fetchall()
         logger.debug(f"Gantry image query for {vehicle_id}: {len(results)} records")
         return results

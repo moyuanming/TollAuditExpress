@@ -222,12 +222,32 @@ class TestGetGantryImagesByVehicle:
 
         mock_pymysql.connect.assert_called_once()
         call_kwargs = mock_pymysql.connect.call_args.kwargs
-        assert "connect_timeout" in call_kwargs, (
-            "pymysql.connect 缺少 connect_timeout,源库不可达时会 hang 整个 endpoint"
-        )
+        assert (
+            "connect_timeout" in call_kwargs
+        ), "pymysql.connect 缺少 connect_timeout,源库不可达时会 hang 整个 endpoint"
         assert "read_timeout" in call_kwargs, "pymysql.connect 缺少 read_timeout,慢查询会 hang 整个 endpoint"
         assert call_kwargs["connect_timeout"] > 0
         assert call_kwargs["read_timeout"] > 0
+
+    @patch("apps.api.services.trip_aggregator.pymysql")
+    @patch("apps.api.services.trip_aggregator.HAS_PYMYSQL", True)
+    def test_query_includes_limit_to_bound_response_size(self, mock_pymysql):
+        """SQL must include LIMIT and the limit value must be in the params,
+        so a busy vehicle cannot return thousands of rows that hang the UI
+        when the OBU monitor detail panel is opened."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pymysql.connect.return_value = mock_conn
+        mock_pymysql.cursors.DictCursor = "DictCursor"
+        mock_cursor.fetchall.return_value = []
+
+        get_gantry_images_by_vehicle("京A1", "2026-06-14", "2026-06-15")
+
+        mock_cursor.execute.assert_called_once()
+        sql, params = mock_cursor.execute.call_args.args
+        assert "LIMIT" in sql.upper(), f"SQL must include LIMIT to bound response size. Got: {sql}"
+        assert 200 in params, f"params must include a limit value (200). Got: {params}"
 
 
 # ============================================================
