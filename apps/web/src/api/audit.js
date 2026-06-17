@@ -4,6 +4,8 @@ const TASK_BASE = '/api'
 const errorListeners = []
 export function onApiError(listener) { errorListeners.push(listener) }
 
+const DEFAULT_TIMEOUT_MS = 20000
+
 export async function fetchJSON(url, options = {}) {
   const token = localStorage.getItem('auth_token')
   const headers = { ...options.headers }
@@ -14,7 +16,40 @@ export async function fetchJSON(url, options = {}) {
   if (apiKey && !token) {
     headers['X-API-Key'] = apiKey
   }
-  const res = await fetch(url, { ...options, headers })
+
+  const timeoutMs = typeof options.timeout === 'number' ? options.timeout : DEFAULT_TIMEOUT_MS
+  const externalSignal = options.signal
+  const controller = new AbortController()
+  const timer = setTimeout(
+    () => controller.abort(new Error(`Request timeout after ${timeoutMs}ms`)),
+    timeoutMs
+  )
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort(externalSignal.reason)
+    } else {
+      externalSignal.addEventListener(
+        'abort',
+        () => controller.abort(externalSignal.reason),
+        { once: true }
+      )
+    }
+  }
+
+  let res
+  try {
+    res = await fetch(url, { ...options, headers, signal: controller.signal })
+  } catch (err) {
+    clearTimeout(timer)
+    const wrapped =
+      err && err.name === 'AbortError'
+        ? new Error(`请求超时 (${timeoutMs}ms),请稍后重试`)
+        : err
+    errorListeners.forEach((l) => l(wrapped))
+    throw wrapped
+  }
+  clearTimeout(timer)
+
   const newToken = res.headers.get('X-New-Access-Token')
   if (newToken) {
     localStorage.setItem('auth_token', newToken)
@@ -40,7 +75,7 @@ export async function fetchJSON(url, options = {}) {
     }
     const error = new Error(errorMessage)
     error.status = res.status
-    errorListeners.forEach(l => l(error))
+    errorListeners.forEach((l) => l(error))
     throw error
   }
   return res.json()
