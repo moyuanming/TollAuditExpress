@@ -257,10 +257,10 @@ async def list_doris_vehicles(
             offset,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error("doris_query_trips failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"doris query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"doris query failed: {e}") from e
 
     return RawTripListResponse(
         trips=[RawTripResponse(**r) for r in rows],
@@ -277,7 +277,7 @@ async def get_doris_vehicle_full(passid: str):
         detail = await run_in_threadpool(doris_get_trip_detail, passid)
     except Exception as e:
         logger.error("doris_get_trip_detail failed for %s: %s", passid, e)
-        raise HTTPException(status_code=500, detail=f"doris query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"doris query failed: {e}") from e
 
     if not detail:
         raise HTTPException(status_code=404, detail="Trip not found")
@@ -359,7 +359,7 @@ async def stream_aggregation(task_id: str, request: Request):
 
 @router.get("/suspects", response_model=SuspectListResponse)
 async def get_suspects(
-    fraud_types: list | None = Query(None, description="欺诈类型列表（可重复或逗号分隔）"),
+    fraud_types: list | None = Query(None, description="欺诈类型列表(可重复或逗号分隔)"),
     process_status: str | None = None,
     llm_result: str | None = Query(None, description="same | different | pending"),
     limit: int = 100,
@@ -696,7 +696,7 @@ async def image_proxy(url: str = Query(...)):
     if not any(url.startswith(p) for p in ALLOWED_IMAGE_PREFIXES):
         raise HTTPException(status_code=400, detail="URL not allowed")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=3.0) as client:
             r = await client.get(url, follow_redirects=True)
             if r.status_code != 200:
                 raise HTTPException(status_code=r.status_code, detail="Upstream fetch failed")
@@ -705,7 +705,7 @@ async def image_proxy(url: str = Query(...)):
                 content=r.content, media_type=content_type, headers={"Cache-Control": "public, max-age=300"}
             )
     except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Fetch error: {e!s}")
+        raise HTTPException(status_code=502, detail=f"Fetch error: {e!s}") from e
 
 
 # ---- 客车 OBU 监测（PASSENGER_USES_TRUCK_OBU_NON_NEW_A）----

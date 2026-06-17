@@ -1,10 +1,27 @@
 import { useState, useEffect, useRef } from 'react'
 import Icon from './Icon'
 
-const LOAD_TIMEOUT_MS = 6000
+const LOAD_TIMEOUT_MS = 3000
+
+function isPrivateHost(url) {
+  try {
+    const h = new URL(url).hostname
+    if (/^10\./.test(h)) return true
+    if (/^192\.168\./.test(h)) return true
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true
+    if (/^127\./.test(h)) return true
+    if (h === 'localhost') return true
+    return false
+  } catch (e) {
+    return false
+  }
+}
 
 function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
-  const [phase, setPhase] = useState('direct') // direct | proxy | error
+  // Private/internal hosts are reached only via the proxy. Skip the direct
+  // phase entirely so we never sit on an unreachable connection.
+  const initialPhase = isPrivateHost(imageUrl || '') ? 'proxy' : 'direct'
+  const [phase, setPhase] = useState(initialPhase) // direct | proxy | error
   const [attempt, setAttempt] = useState(0)
   const timerRef = useRef(null)
 
@@ -45,7 +62,7 @@ function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
   const handleRetry = (e) => {
     e.stopPropagation()
     setAttempt(a => a + 1)
-    setPhase('direct')
+    setPhase(isPrivateHost(imageUrl || '') ? 'proxy' : 'direct')
   }
 
   if (phase === 'error') {
