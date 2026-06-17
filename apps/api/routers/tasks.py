@@ -1,14 +1,17 @@
 """定时任务 API 路由"""
 
+
 from fastapi import APIRouter, HTTPException
-from typing import Optional
 
 from apps.api.database.repositories.task_repository import TaskRepository
 from apps.api.services.task_scheduler import execute_task_manually
 from packages.contracts.types.schemas import (
-    TaskCreate, TaskUpdate,
-    TaskResponse, TaskListResponse,
-    TaskExecutionResponse, TaskExecutionListResponse
+    TaskCreate,
+    TaskExecutionListResponse,
+    TaskExecutionResponse,
+    TaskListResponse,
+    TaskResponse,
+    TaskUpdate,
 )
 
 router = APIRouter()

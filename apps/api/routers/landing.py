@@ -2,14 +2,16 @@
 
 POST 端点带 IP 限流;GET 端点复用全局 auth_middleware(API_KEY / Bearer)。
 """
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from apps.api.core.logging_config import get_logger
 from apps.api.core.rate_limit import SlidingWindowLimiter
 from apps.api.database.repositories.landing_repository import LandingRepository
 from packages.contracts.types.schemas import (
-    LandingLeadCreate, LandingLeadResponse, LandingLeadListResponse,
+    LandingLeadCreate,
+    LandingLeadListResponse,
+    LandingLeadResponse,
 )
 
 logger = get_logger(__name__)

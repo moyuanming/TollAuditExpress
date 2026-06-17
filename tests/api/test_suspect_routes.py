@@ -1,9 +1,10 @@
 """可疑记录页面功能全面测试 — 覆盖 CRUD、过滤、分页、处理动作、边界情况"""
 
-import pytest
 import json
-from fastapi.testclient import TestClient
 from unittest.mock import patch
+
+import pytest
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -21,9 +22,8 @@ def _insert_suspect_trip(trip_id_suffix, fraud_type, is_suspicious=1,
                           process_status='UNPROCESSED', risk_score=0.9,
                           entry_vehicle_type=1, entry_visual_type='truck'):
     """辅助：插入一条行程 + 一条稽核结果，返回 (trip_id, result_id)"""
-    from apps.api.database.repositories.trip_repository import TripRepository
     from apps.api.database.repositories.audit_repository import AuditRepository
-    from apps.api.database.connection import get_connection
+    from apps.api.database.repositories.trip_repository import TripRepository
 
     passid = f'SUSPECT_{trip_id_suffix}'
     trip_repo = TripRepository()

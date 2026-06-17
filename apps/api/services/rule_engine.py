@@ -22,7 +22,7 @@ Rule schema:
   }
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 ALLOWED_FRAUD_TYPES = frozenset(
     [
@@ -150,7 +150,7 @@ def _check_expr_shape(expr: Any, context: str) -> None:
 # ============================================================
 
 
-def _resolve_field(path: str, trip: Dict[str, Any]) -> Any:
+def _resolve_field(path: str, trip: dict[str, Any]) -> Any:
     """$trip.foo.bar → trip['foo']['bar']；路径必须以 $trip 开头。"""
     if not isinstance(path, str) or not path.startswith("$trip"):
         raise RuleExprError(f"field path must start with $trip, got {path!r}")
@@ -173,7 +173,7 @@ def _resolve_field(path: str, trip: Dict[str, Any]) -> Any:
 # ============================================================
 
 
-def evaluate_condition(expr: Any, trip: Dict[str, Any]) -> bool:
+def evaluate_condition(expr: Any, trip: dict[str, Any]) -> bool:
     """求值 when 表达式，返回 True / False。"""
     if isinstance(expr, bool):
         return expr
@@ -206,7 +206,7 @@ def evaluate_condition(expr: Any, trip: Dict[str, Any]) -> bool:
     raise RuleExprError(f"invalid condition expression: {expr!r}")
 
 
-def _eval_comparison(op: str, args: List[Any], trip: Dict[str, Any]) -> bool:
+def _eval_comparison(op: str, args: list[Any], trip: dict[str, Any]) -> bool:
     if len(args) != 2:
         raise RuleExprError(f"{op} takes exactly 2 arguments")
     left = _eval_value(args[0], trip)
@@ -233,7 +233,7 @@ def _eval_comparison(op: str, args: List[Any], trip: Dict[str, Any]) -> bool:
     return False
 
 
-def _eval_in(args: List[Any], trip: Dict[str, Any]) -> bool:
+def _eval_in(args: list[Any], trip: dict[str, Any]) -> bool:
     if len(args) != 2:
         raise RuleExprError("in takes exactly 2 arguments")
     needle = _eval_value(args[0], trip)
@@ -248,7 +248,7 @@ def _eval_in(args: List[Any], trip: Dict[str, Any]) -> bool:
         return False
 
 
-def _eval_count(args: List[Any], trip: Dict[str, Any]) -> int:
+def _eval_count(args: list[Any], trip: dict[str, Any]) -> int:
     if len(args) != 1:
         raise RuleExprError("count takes exactly 1 argument")
     value = _eval_value(args[0], trip)
@@ -264,7 +264,7 @@ def _eval_count(args: List[Any], trip: Dict[str, Any]) -> int:
 # ============================================================
 
 
-def evaluate_score(expr: Any, trip: Dict[str, Any]) -> float:
+def evaluate_score(expr: Any, trip: dict[str, Any]) -> float:
     """求值 score 表达式，返回原始 float（不限幅）。
 
     限幅由 evaluate_rule 在阈值比对前统一处理，确保 DSL 内部可访问任意数值。
@@ -276,7 +276,7 @@ def evaluate_score(expr: Any, trip: Dict[str, Any]) -> float:
         raise RuleExprError(f"score must be numeric, got {expr!r}") from e
 
 
-def _eval_value(node: Any, trip: Dict[str, Any]) -> Any:
+def _eval_value(node: Any, trip: dict[str, Any]) -> Any:
     """通用值求值：literal / $trip.field / 嵌套算术 / count / if。
 
     列表节点歧义消解：首元素为已知操作符 → 表达式；否则 → 字面量数组。
@@ -315,7 +315,7 @@ def _eval_value(node: Any, trip: Dict[str, Any]) -> Any:
     raise RuleExprError(f"invalid expression: {node!r}")
 
 
-def _eval_arithmetic(op: str, args: List[Any], trip: Dict[str, Any]) -> float:
+def _eval_arithmetic(op: str, args: list[Any], trip: dict[str, Any]) -> float:
     if len(args) < 2:
         raise RuleExprError(f"{op} takes at least 2 arguments")
     values = [_eval_value(a, trip) for a in args]
@@ -335,7 +335,7 @@ def _eval_arithmetic(op: str, args: List[Any], trip: Dict[str, Any]) -> float:
     return result
 
 
-def _eval_if(args: List[Any], trip: Dict[str, Any]) -> Any:
+def _eval_if(args: list[Any], trip: dict[str, Any]) -> Any:
     if len(args) != 3:
         raise RuleExprError("if takes exactly 3 arguments")
     cond = evaluate_condition(args[0], trip)
@@ -347,7 +347,7 @@ def _eval_if(args: List[Any], trip: Dict[str, Any]) -> Any:
 # ============================================================
 
 
-def evaluate_rule(rule: Dict[str, Any], trip: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def evaluate_rule(rule: dict[str, Any], trip: dict[str, Any]) -> dict[str, Any] | None:
     """评估规则：当 when 为真时返回 result dict，否则 None。"""
     rule_expr = rule.get("rule_expr") or {}
     when_expr = rule_expr.get("when", True)
@@ -389,25 +389,25 @@ class RuleEngine:
     """注册规则 + 批量执行。"""
 
     def __init__(self) -> None:
-        self._rules: List[Dict[str, Any]] = []
+        self._rules: list[dict[str, Any]] = []
 
-    def register(self, rule: Dict[str, Any]) -> None:
+    def register(self, rule: dict[str, Any]) -> None:
         validate_rule(rule)
         self._rules.append(rule)
 
     def unregister(self, rule_id: int) -> None:
         self._rules = [r for r in self._rules if r.get("id") != rule_id]
 
-    def load_from_dicts(self, rules: List[Dict[str, Any]]) -> None:
+    def load_from_dicts(self, rules: list[dict[str, Any]]) -> None:
         for r in rules:
             self.register(r)
 
     def run(
         self,
-        trip: Dict[str, Any],
-        fraud_types: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
-        results: List[Dict[str, Any]] = []
+        trip: dict[str, Any],
+        fraud_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
         for rule in self._rules:
             enabled = rule.get("enabled")
             if enabled is None:
@@ -423,7 +423,7 @@ class RuleEngine:
 
     def run_batch(
         self,
-        trips: List[Dict[str, Any]],
-        fraud_types: Optional[List[str]] = None,
-    ) -> List[List[Dict[str, Any]]]:
+        trips: list[dict[str, Any]],
+        fraud_types: list[str] | None = None,
+    ) -> list[list[dict[str, Any]]]:
         return [self.run(trip, fraud_types=fraud_types) for trip in trips]

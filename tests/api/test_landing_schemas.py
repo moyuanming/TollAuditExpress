@@ -1,6 +1,7 @@
 """Landing Lead Pydantic 模型 — 字段级校验单元测试"""
 import pytest
 from pydantic import ValidationError
+
 from packages.contracts.types.schemas import LandingLeadCreate
 
 

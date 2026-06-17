@@ -95,6 +95,8 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/$RELEASE_NAME"
 
 # 复制后端代码（排除不需要的文件）
+# 旧版 rsync（如 macOS 自带 2.6.9）不会自动创建目标子目录,需先 mkdir -p
+mkdir -p "$BUILD_DIR/$RELEASE_NAME/apps/api"
 rsync -a \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
@@ -109,6 +111,7 @@ mkdir -p "$BUILD_DIR/$RELEASE_NAME/apps/web/dist"
 rsync -a "$PROJECT_DIR/apps/web/dist/" "$BUILD_DIR/$RELEASE_NAME/apps/web/dist/"
 
 # 复制共享包
+mkdir -p "$BUILD_DIR/$RELEASE_NAME/packages"
 rsync -a \
     --exclude='__pycache__' \
     --exclude='*.pyc' \

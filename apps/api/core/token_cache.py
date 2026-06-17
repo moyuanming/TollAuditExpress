@@ -1,7 +1,7 @@
 """内存 Token 缓存 — refresh token 存储和黑名单管理"""
 
-import time
 import threading
+import time
 
 DEFAULT_REFRESH_TTL = 3600
 DEFAULT_BLACKLIST_TTL = 1800

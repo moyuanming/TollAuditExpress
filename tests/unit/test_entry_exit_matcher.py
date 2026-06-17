@@ -1,6 +1,4 @@
 """EntryExitMatcher 单元测试 — mock vehicle-ai-service"""
-import pytest
-from unittest.mock import patch
 
 from apps.api.services.entry_exit_matcher import EntryExitMatcher, compare_trip
 

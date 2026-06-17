@@ -6,9 +6,9 @@ import logging
 import httpx
 
 from apps.api.core.config import (
-    AUTH_JWT_SERVICE_BASE_URL,
     AUTH_JWT_CLIENT_ID,
     AUTH_JWT_CLIENT_SECRET,
+    AUTH_JWT_SERVICE_BASE_URL,
 )
 
 logger = logging.getLogger(__name__)

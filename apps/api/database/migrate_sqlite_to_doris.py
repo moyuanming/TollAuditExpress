@@ -13,14 +13,13 @@ import argparse
 import os
 import sqlite3
 import sys
-from typing import Any, Dict, Iterable, List
-
-import pymysql
+from collections.abc import Iterable
+from typing import Any
 
 # 让脚本可以独立运行
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from apps.api.core import config  # noqa: E402
-from apps.api.database.doris_connection import get_connection  # noqa: E402
+from apps.api.core import config
+from apps.api.database.doris_connection import get_connection
 
 SQLITE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "audit.db")
 
@@ -35,11 +34,11 @@ def _normalize(v: Any) -> Any:
     return v
 
 
-def _row_to_insert(row: Dict[str, Any], cols: List[str]) -> tuple:
+def _row_to_insert(row: dict[str, Any], cols: list[str]) -> tuple:
     return tuple(_normalize(row.get(c)) for c in cols)
 
 
-def _fetch_all_sqlite(table: str) -> List[Dict[str, Any]]:
+def _fetch_all_sqlite(table: str) -> list[dict[str, Any]]:
     if not os.path.exists(SQLITE_PATH):
         print(f"  [SKIP] SQLite file not found: {SQLITE_PATH}")
         return []
@@ -57,7 +56,7 @@ def _fetch_all_sqlite(table: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
-def _batch_insert(conn, sql: str, cols: List[str], rows: Iterable[Dict[str, Any]], batch_size: int = 500) -> int:
+def _batch_insert(conn, sql: str, cols: list[str], rows: Iterable[dict[str, Any]], batch_size: int = 500) -> int:
     """批量 upsert, 一次提交。"""
     cur = conn.cursor()
     params = [_row_to_insert(r, cols) for r in rows]

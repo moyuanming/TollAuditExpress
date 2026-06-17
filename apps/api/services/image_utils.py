@@ -1,8 +1,8 @@
 """图片下载公共工具"""
 
 import time
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, Iterable, Dict
 from io import BytesIO
 
 try:
@@ -11,7 +11,7 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
-from apps.api.core.config import IMAGE_DOWNLOAD_TIMEOUT, IMAGE_DOWNLOAD_RETRIES
+from apps.api.core.config import IMAGE_DOWNLOAD_RETRIES, IMAGE_DOWNLOAD_TIMEOUT
 from apps.api.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -32,7 +32,7 @@ def _attempt_once(url: str, timeout: int):
     return requests.get(url, timeout=timeout, proxies=proxies)
 
 
-def download_image(url: str, timeout: int = None) -> Optional[BytesIO]:
+def download_image(url: str, timeout: int = None) -> BytesIO | None:
     """下载图片，返回 BytesIO 对象。
 
     使用 ``IMAGE_DOWNLOAD_RETRIES`` (默认 3) 次数进行指数退避重试。
@@ -47,7 +47,7 @@ def download_image(url: str, timeout: int = None) -> Optional[BytesIO]:
         timeout = IMAGE_DOWNLOAD_TIMEOUT
     retries = max(1, IMAGE_DOWNLOAD_RETRIES)
 
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(1, retries + 1):
         try:
             response = _attempt_once(url, timeout)
@@ -77,7 +77,7 @@ def download_image(url: str, timeout: int = None) -> Optional[BytesIO]:
 def download_images_parallel(
     urls: Iterable[str],
     max_workers: int = 2,
-) -> Dict[str, Optional[BytesIO]]:
+) -> dict[str, BytesIO | None]:
     """并行下载多张图片，返回 ``{url: BytesIO|None}``。
 
     失败/超时的 URL 对应值为 ``None``，不会抛异常。
@@ -86,7 +86,7 @@ def download_images_parallel(
     if not url_list:
         return {}
 
-    results: Dict[str, Optional[BytesIO]] = {u: None for u in url_list}
+    results: dict[str, BytesIO | None] = {u: None for u in url_list}
     if not HAS_REQUESTS:
         return results
 

@@ -4,11 +4,10 @@
 阶段 2 由 topology_miner 从历史流水自动学习。
 """
 
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from apps.api.database.doris_connection import get_connection
-
 
 _BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -20,7 +19,7 @@ def _now() -> str:
 class TopologyRepository:
     """gateway_topology 表 CRUD"""
 
-    def list_edges(self) -> List[Dict[str, Any]]:
+    def list_edges(self) -> list[dict[str, Any]]:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -29,14 +28,14 @@ class TopologyRepository:
             rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
-    def get_edge_by_id(self, edge_id: int) -> Optional[Dict[str, Any]]:
+    def get_edge_by_id(self, edge_id: int) -> dict[str, Any] | None:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM gateway_topology WHERE id = %s", (edge_id,))
             row = cursor.fetchone()
         return dict(row) if row else None
 
-    def get_edge(self, from_station: str, to_station: str) -> Optional[Dict[str, Any]]:
+    def get_edge(self, from_station: str, to_station: str) -> dict[str, Any] | None:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -50,8 +49,8 @@ class TopologyRepository:
         self,
         from_station: str,
         to_station: str,
-        distance_km: Optional[float] = None,
-        notes: Optional[str] = None,
+        distance_km: float | None = None,
+        notes: str | None = None,
         is_connected: bool = True,
     ) -> int:
         if not from_station or not to_station:
@@ -97,7 +96,7 @@ class TopologyRepository:
             conn.commit()
             return cursor.rowcount > 0
 
-    def get_neighbors(self, station: str) -> List[Dict[str, Any]]:
+    def get_neighbors(self, station: str) -> list[dict[str, Any]]:
         """返回该站点的所有相邻下游站点（is_connected=1 的边）。"""
         with get_connection() as conn:
             cursor = conn.cursor()

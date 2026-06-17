@@ -1,11 +1,9 @@
 """定时任务数据访问层"""
 
-from typing import Optional, List, Dict
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from apps.api.database.doris_connection import get_connection
-
 
 # 容器是 UTC，DB 走北京时间 — 统一用 Asia/Shanghai 写入，避免对比错位
 _BEIJING_TZ = timezone(timedelta(hours=8))
@@ -18,7 +16,7 @@ def _now() -> str:
 class TaskRepository:
     """定时任务仓储"""
 
-    def create_task(self, task_data: Dict) -> int:
+    def create_task(self, task_data: dict) -> int:
         with get_connection() as conn:
             cursor = conn.cursor()
             now = _now()
@@ -43,20 +41,20 @@ class TaskRepository:
             conn.commit()
             return cursor.lastrowid
 
-    def get_tasks(self) -> List[Dict]:
+    def get_tasks(self) -> list[dict]:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM scheduled_tasks ORDER BY created_at DESC")
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_task(self, task_id: int) -> Optional[Dict]:
+    def get_task(self, task_id: int) -> dict | None:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM scheduled_tasks WHERE id = %s", (task_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def update_task(self, task_id: int, updates: Dict) -> bool:
+    def update_task(self, task_id: int, updates: dict) -> bool:
         with get_connection() as conn:
             cursor = conn.cursor()
             fields = []
@@ -104,7 +102,7 @@ class TaskRepository:
             conn.commit()
             return cursor.rowcount > 0
 
-    def get_due_tasks(self) -> List[Dict]:
+    def get_due_tasks(self) -> list[dict]:
         with get_connection() as conn:
             cursor = conn.cursor()
             now = _now()
@@ -138,7 +136,7 @@ class TaskRepository:
             conn.commit()
             return new_id
 
-    def complete_execution(self, execution_id: int, result_summary: Optional[Dict] = None, error_message: Optional[str] = None):
+    def complete_execution(self, execution_id: int, result_summary: dict | None = None, error_message: str | None = None):
         with get_connection() as conn:
             cursor = conn.cursor()
             now = _now()
@@ -150,7 +148,7 @@ class TaskRepository:
             )
             conn.commit()
 
-    def get_executions(self, task_id: int, limit: int = 50) -> List[Dict]:
+    def get_executions(self, task_id: int, limit: int = 50) -> list[dict]:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -181,7 +179,7 @@ class TaskRepository:
             conn.commit()
             return cursor.rowcount
 
-    def get_execution(self, execution_id: int) -> Optional[Dict]:
+    def get_execution(self, execution_id: int) -> dict | None:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(

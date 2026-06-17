@@ -1,8 +1,9 @@
 """Schema 校验测试"""
 
-from apps.api.models.schemas import ProcessRequest, ActionType
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
+
+from apps.api.models.schemas import ActionType, ProcessRequest
 
 
 def test_process_request_valid_action():

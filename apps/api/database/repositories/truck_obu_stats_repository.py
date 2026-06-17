@@ -5,7 +5,6 @@
 改用 SELECT + INSERT/UPDATE 两步走,SQLite 与 Doris 都能跑。
 """
 
-from typing import Optional, List, Dict
 
 from apps.api.database.doris_connection import get_connection
 
@@ -63,10 +62,10 @@ class TruckObuStatsRepository:
 
     def get_daily_stats(
         self,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        fraud_type: Optional[str] = None,
-    ) -> List[Dict]:
+        from_date: str | None = None,
+        to_date: str | None = None,
+        fraud_type: str | None = None,
+    ) -> list[dict]:
         """按日期范围 [+ fraud_type] 查每日统计。"""
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -92,7 +91,7 @@ class TruckObuStatsRepository:
             cursor.execute(sql, params)
             return [dict(r) for r in cursor.fetchall()]
 
-    def get_overview(self) -> Dict:
+    def get_overview(self) -> dict:
         """累计扫描/异常/确认 + 最近一次执行时间。"""
         with get_connection() as conn:
             cursor = conn.cursor()

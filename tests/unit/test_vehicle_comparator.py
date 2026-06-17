@@ -1,5 +1,5 @@
 """compare_vehicles_by_passid 单元测试 — mock aggregate_trip + AuditRepository + vehicle-ai-service compare。"""
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from apps.api.services.vehicle_comparator import (
     _fetch_visual_features,

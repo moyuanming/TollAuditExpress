@@ -20,7 +20,7 @@ trip 字典字段约定（与 trip_aggregator.serialize_gantry_records 一致）
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Protocol
 
 from apps.api.core.vehicle_ai_client import get_client
 
@@ -37,13 +37,13 @@ TRUCK_TYPES = frozenset(
 class BaseDetector(Protocol):
     fraud_type: str
 
-    def detect(self, trip: Dict[str, Any]) -> Optional[Dict[str, Any]]: ...
+    def detect(self, trip: dict[str, Any]) -> dict[str, Any] | None: ...
 
-    def batch_detect(self, trips: List[Dict[str, Any]]) -> List[Optional[Dict[str, Any]]]:
+    def batch_detect(self, trips: list[dict[str, Any]]) -> list[dict[str, Any] | None]:
         return [self.detect(t) for t in trips]
 
 
-def parse_gantry_records(gantry_records: Any) -> List[Dict[str, Any]]:
+def parse_gantry_records(gantry_records: Any) -> list[dict[str, Any]]:
     if not gantry_records:
         return []
     if isinstance(gantry_records, str):
@@ -57,7 +57,7 @@ def parse_gantry_records(gantry_records: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def _parse_time(value: Any) -> Optional[datetime]:
+def _parse_time(value: Any) -> datetime | None:
     if not value:
         return None
     if isinstance(value, datetime):
@@ -76,9 +76,9 @@ def _parse_time(value: Any) -> Optional[datetime]:
 class GatewayDetector:
     fraud_type = "GATEWAY_ANOMALY"
 
-    def __init__(self, topology: Optional[List[Dict[str, Any]]] = None):
+    def __init__(self, topology: list[dict[str, Any]] | None = None):
         self._connected: set = set()
-        self._distances: Dict[tuple, float] = {}
+        self._distances: dict[tuple, float] = {}
         for edge in topology or []:
             if int(edge.get("is_connected", 1) or 1) == 1:
                 a, b = edge.get("from_station"), edge.get("to_station")
@@ -86,12 +86,12 @@ class GatewayDetector:
                 if edge.get("distance_km") is not None:
                     self._distances[(a, b)] = float(edge["distance_km"])
 
-    def detect(self, trip: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def detect(self, trip: dict[str, Any]) -> dict[str, Any] | None:
         records = parse_gantry_records(trip.get("gantry_records"))
         if len(records) < 2:
             return None
 
-        skip_stations: List[Dict[str, Any]] = []
+        skip_stations: list[dict[str, Any]] = []
         loop_detected = False
         seen_stations: set = set()
 
@@ -130,8 +130,8 @@ class GatewayDetector:
 
 
 def _compute_avg_speed_kmh(
-    records: List[Dict[str, Any]], distances: Dict[tuple, float]
-) -> Optional[float]:
+    records: list[dict[str, Any]], distances: dict[tuple, float]
+) -> float | None:
     if len(records) < 2:
         return None
     total_km = 0.0
@@ -165,7 +165,7 @@ class VehicleTypeDetector:
     def __init__(self, ai_client: Any = None):
         self._client = ai_client
 
-    def detect(self, trip: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def detect(self, trip: dict[str, Any]) -> dict[str, Any] | None:
         entry_declared = trip.get("entry_vehicle_type")
         exit_declared = trip.get("exit_vehicle_type")
         entry_image = trip.get("entry_image_license") or trip.get("entry_image_trans")
@@ -194,7 +194,7 @@ class VehicleTypeDetector:
             "risk_hint": 0.8 if (downgrade_entry and downgrade_exit) else 0.65,
         }
 
-    def _classify(self, image_url: str) -> Optional[int]:
+    def _classify(self, image_url: str) -> int | None:
         """通过 vehicle-ai-service 的 truck_obu 端点反推车型(declared=1 客车, 视觉为 truck 时降级)。"""
         if self._client is None or not image_url:
             return None
@@ -212,7 +212,7 @@ class VehicleTypeDetector:
         return 2 if bool(is_truck) else 1
 
 
-def _is_downgrade(visual: Optional[int], declared: Optional[int]) -> bool:
+def _is_downgrade(visual: int | None, declared: int | None) -> bool:
     if visual is None or declared is None:
         return False
     if declared == VEHICLE_TYPE_PASSENGER and visual in TRUCK_TYPES:
@@ -238,12 +238,12 @@ class PlateObuDetector:
         self.same_plate_min_obu = same_plate_min_obu
         self.obu_unbind_min_vehicles = obu_unbind_min_vehicles
 
-    def detect(self, trip: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def detect(self, trip: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     def detect_same_plate(
-        self, plate: str, history: List[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+        self, plate: str, history: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
         obu_ids = {t.get("entry_obu_id") for t in history if t.get("entry_obu_id")}
         obu_ids.discard(None)
         if len(obu_ids) < self.same_plate_min_obu:
@@ -268,8 +268,8 @@ class PlateObuDetector:
         }
 
     def detect_obu_unbind(
-        self, obu_id: str, history: List[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+        self, obu_id: str, history: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
         vehicles = {t.get("entry_vehicle_id") for t in history if t.get("entry_vehicle_id")}
         vehicles.discard(None)
         if len(vehicles) < self.obu_unbind_min_vehicles:
@@ -278,7 +278,7 @@ class PlateObuDetector:
             _parse_time(t.get("entry_time")) for t in history if t.get("entry_time")
         )
         times = [t for t in times if t is not None]
-        min_gap_min: Optional[float] = None
+        min_gap_min: float | None = None
         for i in range(len(times) - 1):
             gap = (times[i + 1] - times[i]).total_seconds() / 60.0
             if min_gap_min is None or gap < min_gap_min:
@@ -300,7 +300,7 @@ class PlateObuDetector:
 class ObuShieldDetector:
     fraud_type = "OBU_SHIELD"
 
-    def detect(self, trip: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def detect(self, trip: dict[str, Any]) -> dict[str, Any] | None:
         entry_obu = trip.get("entry_obu_id")
         exit_image = trip.get("exit_image_license") or trip.get("exit_image_trans")
 
@@ -326,7 +326,7 @@ class ObuShieldDetector:
 # ============================================================
 
 
-def all_detectors() -> List[BaseDetector]:
+def all_detectors() -> list[BaseDetector]:
     return [
         GatewayDetector(),
         VehicleTypeDetector(ai_client=get_client()),

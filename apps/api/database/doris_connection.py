@@ -100,7 +100,7 @@ def init_doris() -> None:
     if not os.path.exists(ddl_path):
         logger.warning("DDL file not found: %s", ddl_path)
         return
-    with open(ddl_path, "r", encoding="utf-8") as f:
+    with open(ddl_path, encoding="utf-8") as f:
         sql = f.read()
     # 先剥注释行,再按 ; 切分,过滤掉空段。注释夹在语句中间不会破坏 SQL。
     def _strip_sql_comments(s: str) -> str:

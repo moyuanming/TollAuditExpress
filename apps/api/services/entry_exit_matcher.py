@@ -4,7 +4,6 @@
 增加车牌 OCR 识别，将车牌一致性作为比对权重
 """
 
-from typing import Dict, Optional
 
 from apps.api.core.logging_config import get_logger
 from apps.api.core.vehicle_ai_client import get_client
@@ -12,7 +11,7 @@ from apps.api.core.vehicle_ai_client import get_client
 logger = get_logger(__name__)
 
 
-def _recognize_plate_safe(image_url: str) -> Optional[Dict]:
+def _recognize_plate_safe(image_url: str) -> dict | None:
     """调用车牌 OCR 识别，失败时返回 None（不抛异常）。"""
     if not image_url:
         return None
@@ -28,7 +27,7 @@ def _recognize_plate_safe(image_url: str) -> Optional[Dict]:
 class EntryExitMatcher:
     """出入口车辆比对器 — HTTP 客户端封装"""
 
-    def __init__(self, model_path: Optional[str] = None):
+    def __init__(self, model_path: str | None = None):
         """model_path 参数保留以兼容旧调用,但不再使用(由公共服务托管)"""
         self.model_path = model_path
 
@@ -38,7 +37,7 @@ class EntryExitMatcher:
             "EntryExitMatcher 现在通过 vehicle-ai-service 调用,不再本地下载图片"
         )
 
-    def compare(self, entry_record: Dict, exit_record: Dict) -> Dict:
+    def compare(self, entry_record: dict, exit_record: dict) -> dict:
         """
         比对出入口车辆
 
@@ -130,7 +129,7 @@ class EntryExitMatcher:
         return result
 
 
-def compare_trip(entry_record: Dict, exit_record: Dict) -> Dict:
+def compare_trip(entry_record: dict, exit_record: dict) -> dict:
     """
     便捷函数：比对出入口记录
     """

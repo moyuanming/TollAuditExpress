@@ -6,7 +6,9 @@ import pytest
 @pytest.fixture
 def repo_client(temp_db):
     from apps.api.database.repositories.trip_repository import (
-        TripRepository, _build_where, _resolve_order, VEHICLE_TYPE_VALUES,
+        TripRepository,
+        _build_where,
+        _resolve_order,
     )
     return {
         "TripRepository": TripRepository,

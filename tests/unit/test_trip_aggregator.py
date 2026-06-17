@@ -1,11 +1,12 @@
 """TripAggregator 单元测试"""
-import pytest
 from datetime import datetime
-from io import BytesIO
 
 from apps.api.services.trip_aggregator import (
-    build_image_url, build_gantry_image_url,
-    serialize_gantry_records, aggregate_trip, TripAggregator
+    TripAggregator,
+    aggregate_trip,
+    build_gantry_image_url,
+    build_image_url,
+    serialize_gantry_records,
 )
 
 

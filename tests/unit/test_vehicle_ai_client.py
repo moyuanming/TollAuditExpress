@@ -7,7 +7,6 @@ import json
 from unittest.mock import patch
 
 import httpx
-import pytest
 
 from apps.api.core.vehicle_ai_client import VehicleAIClient, get_client
 

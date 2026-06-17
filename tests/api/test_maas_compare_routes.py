@@ -1,7 +1,8 @@
 """POST /api/audit/detect/entry-exit/llm 路由测试 — 覆盖成功、参数缺失、依赖错误的 HTTP 状态码。"""
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
 
 
 @pytest.fixture

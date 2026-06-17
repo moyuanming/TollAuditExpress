@@ -1,17 +1,17 @@
 """doris_trip_query 单元测试 - 重点覆盖 SQL 构造与 sort 注入防御"""
 from datetime import datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from apps.api.services import doris_trip_query as dtq
 from apps.api.services.doris_trip_query import (
-    query_trips,
-    get_trip_detail,
-    _build_where_clause,
+    SORTABLE_COLUMNS_DORIS,
     _build_having_clause,
     _build_passid_cte,
-    SORTABLE_COLUMNS_DORIS,
+    _build_where_clause,
+    get_trip_detail,
+    query_trips,
 )
 
 

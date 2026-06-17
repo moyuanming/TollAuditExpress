@@ -5,7 +5,6 @@ llm_checked_at) 沿用旧名,留待后续 schema 迁移统一改 ai_verify_*。
 """
 import os
 import sys
-import pytest
 from datetime import datetime
 from unittest.mock import patch
 
@@ -129,8 +128,8 @@ class TestRunAiVerifyBatchForSuspects:
         assert row['llm_is_same_vehicle'] is None
 
     def test_visual_type_missing_excluded_by_repo_filter(self, temp_db):
-        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
         from apps.api.database.connection import get_connection
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
 
         # 缺 visual_type 的可疑记录
         with get_connection() as conn:
@@ -157,8 +156,8 @@ class TestRunAiVerifyBatchForSuspects:
         assert result['succeeded'] == 0
 
     def test_processes_multiple_suspects_concurrently(self, temp_db):
-        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
         from apps.api.database.repositories.audit_repository import AuditRepository
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
 
         audit_repo = AuditRepository()
         ids = [
@@ -187,8 +186,8 @@ class TestRunAiVerifyBatchForSuspects:
             assert row['llm_checked_at'] is not None
 
     def test_limit_caps_processing(self, temp_db):
-        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
         from apps.api.database.repositories.audit_repository import AuditRepository
+        from apps.api.services.ai_verify_batch import run_ai_verify_batch_for_suspects
 
         audit_repo = AuditRepository()
         for i in range(10):

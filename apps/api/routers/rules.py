@@ -1,17 +1,17 @@
 """规则管理 API 路由 — Phase 1 MVP"""
 
+
 from fastapi import APIRouter, HTTPException
-from typing import Optional
 
 from apps.api.core.logging_config import get_logger
 from apps.api.database.repositories.rule_repository import RuleRepository
-from apps.api.services.rule_engine import validate_rule, RuleValidationError
 from apps.api.models.schemas import (
     DetectionRuleCreate,
-    DetectionRuleUpdate,
-    DetectionRuleResponse,
     DetectionRuleListResponse,
+    DetectionRuleResponse,
+    DetectionRuleUpdate,
 )
+from apps.api.services.rule_engine import RuleValidationError, validate_rule
 
 logger = get_logger(__name__)
 
@@ -45,8 +45,8 @@ def _to_response(rule: dict) -> DetectionRuleResponse:
 
 @router.get("/rules", response_model=DetectionRuleListResponse)
 async def list_rules(
-    fraud_type: Optional[str] = None,
-    enabled: Optional[int] = None,
+    fraud_type: str | None = None,
+    enabled: int | None = None,
 ):
     repo = _repo()
     rules = repo.list_rules(enabled_only=(enabled == 1) if enabled is not None else False)
@@ -95,7 +95,7 @@ async def create_rule(data: DetectionRuleCreate):
             return _to_response(rule)
         time.sleep(0.2)
     # 读取失败则基于请求数据构建响应
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     return _to_response({
         "id": rule_id, "name": data.name, "fraud_type": data.fraud_type,
@@ -144,7 +144,7 @@ async def update_rule(rule_id: int, data: DetectionRuleUpdate):
             existing[key] = json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value
         else:
             existing[key] = value
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     existing["updated_at"] = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     return _to_response(existing)
 
@@ -170,7 +170,7 @@ async def toggle_rule(rule_id: int, enabled: int):
     # Doris UNIQUE KEY merge-on-write 存在 read-after-write 延迟，
     # 直接基于请求参数构建响应而非重新从 DB 读取
     existing["enabled"] = 1 if enabled else 0
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     existing["updated_at"] = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     return _to_response(existing).dict()
 
@@ -185,6 +185,6 @@ async def set_dry_run(rule_id: int, dry_run: int):
     if not ok:
         raise HTTPException(status_code=404, detail="Rule not found")
     existing["dry_run"] = 1 if dry_run else 0
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     existing["updated_at"] = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     return _to_response(existing).dict()

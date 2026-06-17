@@ -2,10 +2,10 @@
 
 import logging
 
-from fastapi import APIRouter, Header, Query, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 
-from apps.api.core.config import AUTH_ENABLED, AUTH_LOGIN_URL, AUTH_JWT_PUBLIC_KEY
-from apps.api.core.jwt_util import decode_and_validate, parse_payload_unsafe, JwtExpiredError, JwtInvalidError
+from apps.api.core.config import AUTH_ENABLED, AUTH_JWT_PUBLIC_KEY, AUTH_LOGIN_URL
+from apps.api.core.jwt_util import JwtExpiredError, JwtInvalidError, decode_and_validate, parse_payload_unsafe
 from apps.api.core.oauth_service import oauth_service
 from apps.api.core.token_cache import token_cache
 

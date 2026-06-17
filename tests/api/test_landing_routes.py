@@ -75,8 +75,8 @@ class TestListLeads:
 
     @pytest.fixture
     def authed_client(self, temp_db, monkeypatch):
-        from apps.api.main import app
         from apps.api.core import auth as auth_mod
+        from apps.api.main import app
         monkeypatch.setattr(auth_mod, "API_KEY", "test-key")
         with TestClient(app) as c:
             yield c

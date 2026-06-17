@@ -3,8 +3,9 @@
 阶段2: 视觉检测（Model A: 货车套OBU + Model B: 出入口比对）
 用法: python scripts/detect_ganquanbao.py
 """
-import sys
 import os
+import sys
+
 sys.path.insert(0, '/Users/moyuanming/TollAuditExpress')
 
 try:
@@ -13,11 +14,12 @@ try:
 except ImportError:
     pass
 
-import sqlite3
 import json
 import logging
-from apps.api.services.truck_obu_detector import TruckOBUDetector
+import sqlite3
+
 from apps.api.services.entry_exit_matcher import EntryExitMatcher
+from apps.api.services.truck_obu_detector import TruckOBUDetector
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)

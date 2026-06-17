@@ -16,7 +16,6 @@ import pytest
 
 from apps.api.database.repositories.rule_repository import RuleRepository
 
-
 # ============================================================
 # fixtures & helpers
 # ============================================================

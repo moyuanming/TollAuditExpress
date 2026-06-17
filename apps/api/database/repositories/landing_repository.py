@@ -1,12 +1,12 @@
 """Landing Lead 仓储 — 写入 / 查询 ods_AI_DB.landing_leads(测试期走 SQLite 替身)。"""
 from datetime import datetime
-from typing import List, Tuple, Dict, Any
+from typing import Any
 
 from apps.api.database.doris_connection import get_connection
 
 
 class LandingRepository:
-    def insert(self, lead: Dict[str, Any]) -> int:
+    def insert(self, lead: dict[str, Any]) -> int:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -30,7 +30,7 @@ class LandingRepository:
             conn.commit()
             return cursor.lastrowid
 
-    def list_paginated(self, limit: int = 20, offset: int = 0) -> Tuple[List[Dict], int]:
+    def list_paginated(self, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(

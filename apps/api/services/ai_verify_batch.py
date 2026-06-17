@@ -9,7 +9,7 @@
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from apps.api.core.logging_config import get_logger
 from apps.api.database.repositories.audit_repository import AuditRepository
@@ -22,7 +22,7 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-def _process_one(row: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+def _process_one(row: dict[str, Any]) -> tuple[str, str | None]:
     """单条处理：调公共服务比对，OK 则写库。返回 (status, error_code)。
     status ∈ {'ok', 'skipped'}; error_code 仅 skipped 时有值。
     """
@@ -61,7 +61,7 @@ def _process_one(row: Dict[str, Any]) -> Tuple[str, Optional[str]]:
     return 'ok', None
 
 
-def run_ai_verify_batch_for_suspects(limit: int = 50, max_workers: int = 4) -> Dict[str, Any]:
+def run_ai_verify_batch_for_suspects(limit: int = 50, max_workers: int = 4) -> dict[str, Any]:
     """取最多 limit 条待 AI 复核记录，并发跑公共服务写回。
 
     Returns:
@@ -72,11 +72,11 @@ def run_ai_verify_batch_for_suspects(limit: int = 50, max_workers: int = 4) -> D
     if not rows:
         return {'processed': 0, 'succeeded': 0, 'skipped': 0, 'errors': []}
 
-    statuses: List[str] = []
-    errors: List[str] = []
+    statuses: list[str] = []
+    errors: list[str] = []
     workers = max(1, min(max_workers, len(rows)))
 
-    def _wrap(row: Dict[str, Any]) -> str:
+    def _wrap(row: dict[str, Any]) -> str:
         status, err_code = _process_one(row)
         if status == 'skipped' and err_code:
             passid = row.get('passid') or f"id={row.get('id')}"

@@ -1,8 +1,9 @@
 """任意车辆查询 API 集成测试 — 覆盖 /api/audit/trips 扩展参数 + /api/audit/trip/{passid}/full"""
 
 import json
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.fixture

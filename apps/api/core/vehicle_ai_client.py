@@ -17,11 +17,11 @@
     车牌 OCR 识别
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
-from apps.api.core.config import VEHICLE_AI_SERVICE_URL, VEHICLE_AI_SERVICE_TIMEOUT
+from apps.api.core.config import VEHICLE_AI_SERVICE_TIMEOUT, VEHICLE_AI_SERVICE_URL
 from apps.api.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -41,20 +41,20 @@ class VehicleAIClient:
         image_url_a: str,
         image_url_b: str,
         *,
-        entry_vehicle_id: Optional[str] = None,
-        exit_vehicle_id: Optional[str] = None,
-        entry_obu_id: Optional[str] = None,
-        exit_obu_id: Optional[str] = None,
-        entry_color: Optional[str] = None,
-        exit_color: Optional[str] = None,
-        entry_visual_type: Optional[str] = None,
-        exit_visual_type: Optional[str] = None,
-        fingerprint_sim: Optional[float] = None,
-        entry_plate_ocr: Optional[str] = None,
-        exit_plate_ocr: Optional[str] = None,
-        plate_match: Optional[bool] = None,
-    ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
+        entry_vehicle_id: str | None = None,
+        exit_vehicle_id: str | None = None,
+        entry_obu_id: str | None = None,
+        exit_obu_id: str | None = None,
+        entry_color: str | None = None,
+        exit_color: str | None = None,
+        entry_visual_type: str | None = None,
+        exit_visual_type: str | None = None,
+        fingerprint_sim: float | None = None,
+        entry_plate_ocr: str | None = None,
+        exit_plate_ocr: str | None = None,
+        plate_match: bool | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             'image_url_a': image_url_a,
             'image_url_b': image_url_b,
         }
@@ -77,7 +77,7 @@ class VehicleAIClient:
 
         return self._post('/api/v1/vehicle/compare', payload)
 
-    def _post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         try:
             with httpx.Client(timeout=self.timeout_s) as client:
@@ -114,7 +114,7 @@ class VehicleAIClient:
 
         return data
 
-    def _post_multipart(self, path: str, fields: Dict[str, Any]) -> Dict[str, Any]:
+    def _post_multipart(self, path: str, fields: dict[str, Any]) -> dict[str, Any]:
         """multipart/form-data POST — 用于 recognize-plate / plate 等仅接受表单的端点。"""
         url = f"{self.base_url}{path}"
         try:
@@ -152,7 +152,7 @@ class VehicleAIClient:
 
         return data
 
-    def recognize_plate(self, image_url: str) -> Dict[str, Any]:
+    def recognize_plate(self, image_url: str) -> dict[str, Any]:
         """车牌 OCR 识别 — 从图片中识别车牌号。
 
         端点仅接受 multipart/form-data(application/json 会被拒,返回
@@ -162,7 +162,7 @@ class VehicleAIClient:
             'image_url': image_url,
         })
 
-    def entry_exit(self, entry_url: str, exit_url: str) -> Dict[str, Any]:
+    def entry_exit(self, entry_url: str, exit_url: str) -> dict[str, Any]:
         """出入口车辆比对 — 判断入出口是否为同一辆车。"""
         return self._post('/api/v1/vehicle/entry-exit', {
             'entry_image_url': entry_url,
@@ -174,7 +174,7 @@ class VehicleAIClient:
         image_url: str,
         *,
         declared_vehicle_type: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """货车套用客车OBU检测 — 判断客车记录的图片是否实为货车。
 
         复合端点(ML+LLM),旧路径兼容。新代码请优先用 ``classify_truck`` +
@@ -185,7 +185,7 @@ class VehicleAIClient:
             'declared_vehicle_type': declared_vehicle_type,
         })
 
-    def classify_truck(self, image_url: str) -> Dict[str, Any]:
+    def classify_truck(self, image_url: str) -> dict[str, Any]:
         """纯 ML 视觉车型分类 — 第一步,失败/拒收一律返回 ``is_truck=False``。
 
         端点契约:不抛 5xx。返回字段 ``is_truck`` / ``confidence`` /
@@ -201,7 +201,7 @@ class VehicleAIClient:
         *,
         ml_is_truck: bool,
         ml_confidence: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """LLM 二次复核 — 第二步,仅在 classify_truck 返回 is_truck=True 时调用。
 
         返回字段 ``is_truck`` (Optional[bool]) / ``confidence`` / ``llm_verified``
@@ -215,7 +215,7 @@ class VehicleAIClient:
         })
 
 
-_client: Optional[VehicleAIClient] = None
+_client: VehicleAIClient | None = None
 
 
 def get_client() -> VehicleAIClient:

@@ -8,12 +8,12 @@
 """
 
 import json
-from typing import Any, Dict, List
+from typing import Any
 
 from apps.api.database.doris_connection import get_connection
 
 
-def _parse_rule_row(row: Dict[str, Any]) -> Dict[str, Any]:
+def _parse_rule_row(row: dict[str, Any]) -> dict[str, Any]:
     """把 DB 行解析为 rule dict。
 
     Raises:
@@ -48,9 +48,9 @@ class RuleLoader:
     """
 
     def __init__(self) -> None:
-        self.load_errors: List[Dict[str, Any]] = []
+        self.load_errors: list[dict[str, Any]] = []
 
-    def load_all_enabled(self) -> List[Dict[str, Any]]:
+    def load_all_enabled(self) -> list[dict[str, Any]]:
         """读取所有 enabled=1 的规则；解析失败的跳过并记录。"""
         with get_connection() as conn:
             cursor = conn.cursor()
@@ -59,7 +59,7 @@ class RuleLoader:
             )
             rows = cursor.fetchall()
 
-        rules: List[Dict[str, Any]] = []
+        rules: list[dict[str, Any]] = []
         for row in rows:
             try:
                 rule = _parse_rule_row(row)
@@ -75,14 +75,14 @@ class RuleLoader:
             rules.append(rule)
         return rules
 
-    def load_all(self) -> List[Dict[str, Any]]:
+    def load_all(self) -> list[dict[str, Any]]:
         """读取所有规则（含 disabled），用于 RuleStudio 后台展示。"""
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM detection_rules ORDER BY id")
             rows = cursor.fetchall()
 
-        rules: List[Dict[str, Any]] = []
+        rules: list[dict[str, Any]] = []
         for row in rows:
             try:
                 rules.append(_parse_rule_row(row))
@@ -97,15 +97,15 @@ class RuleLoader:
         return rules
 
 
-def load_rules() -> List[Dict[str, Any]]:
+def load_rules() -> list[dict[str, Any]]:
     """便捷函数：加载所有 enabled 规则并校验，供 task_executor 调用。"""
-    from apps.api.services.rule_engine import validate_rule, RuleValidationError
     from apps.api.core.logging_config import get_logger
+    from apps.api.services.rule_engine import RuleValidationError, validate_rule
     _logger = get_logger(__name__)
 
     loader = RuleLoader()
     raw = loader.load_all_enabled()
-    rules: List[Dict[str, Any]] = []
+    rules: list[dict[str, Any]] = []
     for r in raw:
         try:
             validate_rule(r)

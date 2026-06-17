@@ -1,8 +1,9 @@
 """
 批量聚合脚本：一次查询Doris拉取所有甘泉堡相关记录，内存聚合后批量写入SQLite
 """
-import sys
 import os
+import sys
+
 sys.path.insert(0, '/Users/moyuanming/TollAuditExpress')
 
 try:
@@ -11,12 +12,14 @@ try:
 except ImportError:
     pass
 
-from apps.api.services.trip_aggregator import build_image_url, DB_CONFIG
-from apps.api.database.repositories.trip_repository import TripRepository
-from collections import defaultdict
-import pymysql
 import logging
+from collections import defaultdict
 from datetime import datetime
+
+import pymysql
+
+from apps.api.database.repositories.trip_repository import TripRepository
+from apps.api.services.trip_aggregator import DB_CONFIG, build_image_url
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)

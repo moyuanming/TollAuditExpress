@@ -13,7 +13,7 @@
     - 元数据完整时优先走侧车的分档裁决，完全省去 LLM
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from apps.api.core.logging_config import get_logger
 from apps.api.core.vehicle_ai_client import get_client
@@ -23,21 +23,21 @@ from apps.api.services.trip_aggregator import aggregate_trip
 logger = get_logger(__name__)
 
 
-def _missing_image_error(missing_field: str) -> Dict[str, Any]:
+def _missing_image_error(missing_field: str) -> dict[str, Any]:
     return {
         'error': 'image_url_missing',
         'field': missing_field,
     }
 
 
-def _unavailable_error(detail: str) -> Dict[str, Any]:
+def _unavailable_error(detail: str) -> dict[str, Any]:
     return {
         'error': 'service_unavailable',
         'detail': detail,
     }
 
 
-def _fetch_visual_features(passid: str) -> Dict[str, Any]:
+def _fetch_visual_features(passid: str) -> dict[str, Any]:
     """从 audit_results 拉视觉信号，失败/缺失时返回空 dict（走 LLM 回退）。"""
     try:
         row = AuditRepository().get_visual_features_by_passid(passid)
@@ -55,7 +55,7 @@ def _fetch_visual_features(passid: str) -> Dict[str, Any]:
     }
 
 
-def _recognize_plate_safe(image_url: str) -> Optional[Dict]:
+def _recognize_plate_safe(image_url: str) -> dict | None:
     """调用车牌 OCR 识别，失败时返回 None。"""
     if not image_url:
         return None
@@ -68,7 +68,7 @@ def _recognize_plate_safe(image_url: str) -> Optional[Dict]:
     return None
 
 
-def compare_vehicles_by_passid(passid: str) -> Dict[str, Any]:
+def compare_vehicles_by_passid(passid: str) -> dict[str, Any]:
     """按 passid 取行程后，把图片 URL + 元数据 + 车牌 OCR 信号透传给 vehicle-ai-service。
 
     Returns:

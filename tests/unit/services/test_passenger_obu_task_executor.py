@@ -68,6 +68,7 @@ def _hit_details(side="ENTRY"):
         "exit_visual_type": None,
         "llm_verified": True,
         "llm_confidence": 0.93,
+        "llm_call_status": "called_confirmed",
         "visual_vehicle_type": "truck",
         "risk_score": 0.85,
     }
@@ -251,6 +252,10 @@ class TestHitPath:
             assert details["llm_verified"] is True
             assert details["visual_vehicle_type"] == "truck"
             assert details["rule_version"] == "v1"
+            # 回归: llm_call_status / entry_image_trans / exit_image_trans 必须存在
+            assert details["llm_call_status"] == "called_confirmed"
+            assert details["entry_image_trans"] == "http://example.com/entry_trans.jpg"
+            assert details["exit_image_trans"] == "http://example.com/exit_trans.jpg"
 
             stats_repo = TruckObuStatsRepository()
             stats = stats_repo.get_daily_stats(fraud_type=FRAUD_TYPE)

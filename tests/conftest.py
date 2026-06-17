@@ -5,12 +5,12 @@ SQLite 占位符 (?) 与 pymysql (%s) 不同，包装层自动转换。
 """
 
 import os
+import sqlite3
 import sys
 import tempfile
-import sqlite3
 from contextlib import contextmanager
-from unittest.mock import patch, MagicMock
 from io import BytesIO
+from unittest.mock import MagicMock, patch
 
 import pytest
 

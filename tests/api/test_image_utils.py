@@ -1,8 +1,7 @@
 """download_image / download_images_parallel 测试 — 验证 retry 与并行下载行为。"""
 from io import BytesIO
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pytest
 import requests
 
 from apps.api.services.image_utils import download_image, download_images_parallel

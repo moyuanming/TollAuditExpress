@@ -1,5 +1,6 @@
 """简单内存限流器测试"""
 import time
+
 from apps.api.core.rate_limit import SlidingWindowLimiter
 
 

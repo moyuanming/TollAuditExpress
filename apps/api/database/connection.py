@@ -2,11 +2,10 @@
 数据库连接管理
 """
 
-import sqlite3
-import os
 import glob
+import os
+import sqlite3
 from contextlib import contextmanager
-from typing import Optional
 
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 DB_PATH = os.path.join(DB_DIR, "audit.db")
@@ -169,7 +168,7 @@ def _run_migrations():
             if version <= current_version:
                 continue
 
-            with open(mf, 'r') as f:
+            with open(mf) as f:
                 sql = f.read()
 
             # Execute each statement separately (SQLite doesn't support multi-statement executes well)

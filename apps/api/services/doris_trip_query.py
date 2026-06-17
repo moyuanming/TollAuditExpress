@@ -10,7 +10,7 @@
 """
 
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Any
 
 try:
     import pymysql
@@ -18,16 +18,16 @@ try:
 except ImportError:
     HAS_PYMYSQL = False
 
+from apps.api.core.logging_config import get_logger
 from apps.api.services.trip_aggregator import (
     DB_CONFIG,
     aggregate_trip,
+    build_image_url,
     get_gantry_images_by_vehicle,
     get_records_by_passid,
     serialize_gantry_image_records,
     serialize_gantry_records,
-    build_image_url,
 )
-from apps.api.core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -43,20 +43,20 @@ SORTABLE_COLUMNS_DORIS = frozenset({
 VEHICLE_ID_MATCH_MODES_DORIS = frozenset({'exact', 'prefix', 'contains'})
 
 
-def _normalize_vehicle_id(value: Optional[str]) -> str:
+def _normalize_vehicle_id(value: str | None) -> str:
     """清理车牌输入：去空白 + 转大写。空字符串返回空串。"""
     if not value:
         return ''
     return value.strip().upper()
 
 
-def _build_where_clause(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
+def _build_where_clause(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     """根据过滤条件构造 WHERE 子句（作用在原始记录上）。
 
     返回 (where_sql, params)。params 顺序与占位符顺序一致。
     """
-    clauses: List[str] = []
-    params: List[Any] = []
+    clauses: list[str] = []
+    params: list[Any] = []
 
     vehicle_id = _normalize_vehicle_id(filters.get('vehicle_id'))
     match_mode = filters.get('vehicle_id_match', 'exact')
@@ -112,10 +112,10 @@ def _build_where_clause(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
     return where_sql, params
 
 
-def _build_having_clause(filters: Dict[str, Any]) -> Tuple[str, List[Any]]:
+def _build_having_clause(filters: dict[str, Any]) -> tuple[str, list[Any]]:
     """HAVING 子句（基于聚合后的 entry_* / exit_* / gantry_count 字段）。"""
-    clauses: List[str] = []
-    params: List[Any] = []
+    clauses: list[str] = []
+    params: list[Any] = []
 
     entry_station = (filters.get('entry_station_name') or '').strip()
     if entry_station:
@@ -176,7 +176,7 @@ def _build_passid_cte(where_sql: str, having_sql: str) -> str:
     """
 
 
-def _format_time(value: Any) -> Optional[str]:
+def _format_time(value: Any) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     if value is None:
@@ -184,9 +184,9 @@ def _format_time(value: Any) -> Optional[str]:
     return str(value)
 
 
-def _row_to_dict(row: Dict[str, Any]) -> Dict[str, Any]:
+def _row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     """把 CTE 查询的 dict 行序列化为前端消费的 RawTripResponse 字段集。"""
-    def _str_or_none(v: Any) -> Optional[str]:
+    def _str_or_none(v: Any) -> str | None:
         if v is None:
             return None
         return v if isinstance(v, str) else str(v)
@@ -209,7 +209,7 @@ def _row_to_dict(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def query_trips(filters: Dict[str, Any], limit: int = 20, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
+def query_trips(filters: dict[str, Any], limit: int = 20, offset: int = 0) -> tuple[list[dict[str, Any]], int]:
     """在 Doris 端按 PASSID 聚合，返回 (rows, total)。
 
     - 入口/出口站名、门架数范围走 HAVING 后置过滤
@@ -258,7 +258,7 @@ def query_trips(filters: Dict[str, Any], limit: int = 20, offset: int = 0) -> Tu
     return [_row_to_dict(r) for r in rows], total
 
 
-def get_trip_detail(passid: str) -> Optional[Dict[str, Any]]:
+def get_trip_detail(passid: str) -> dict[str, Any] | None:
     """获取单个行程的原始数据详情。
 
     复用 trip_aggregator.aggregate_trip() 拿到入口/出口/门架流水，再补门架抓拍图片流水。
@@ -330,7 +330,7 @@ def get_trip_detail(passid: str) -> Optional[Dict[str, Any]]:
     exit_time = trip.get('exit_time')
     vehicle_color = trip.get('exit_vehicle_color') or trip.get('entry_vehicle_color')
 
-    gantry_images: List[Dict[str, Any]] = []
+    gantry_images: list[dict[str, Any]] = []
     if entry_vehicle and entry_time:
         try:
             entry_dt = entry_time if isinstance(entry_time, datetime) else datetime.fromisoformat(str(entry_time))
@@ -388,7 +388,7 @@ def find_passenger_obu_candidates_doris(
     media_type: int = 1,
     limit: int = 500,
     offset: int = 0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """从 Doris 原始表筛选客车 OBU 候选行程（两步 CTE）。
 
     Step 1: 找 PASSID — VEHICLETYPE=1, MEDIATYPE=1, VEHICLEID NOT LIKE '新A%'
@@ -447,11 +447,11 @@ def find_passenger_obu_candidates_doris(
     return _rows_to_candidate_trips(rows)
 
 
-def _rows_to_candidate_trips(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _rows_to_candidate_trips(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """将 Doris 扁平 entry/exit 行按 PASSID 分组为 detect_trip 兼容的 dict。"""
     from collections import defaultdict
 
-    by_passid: Dict[str, List[Dict]] = defaultdict(list)
+    by_passid: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
         by_passid[r['PASSID']].append(r)
 

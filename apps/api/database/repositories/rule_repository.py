@@ -6,11 +6,10 @@
 """
 
 import json
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from apps.api.database.doris_connection import get_connection
-
 
 _BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -35,7 +34,7 @@ class RuleRepository:
         "source",
     )
 
-    def list_rules(self, enabled_only: bool = False) -> List[Dict]:
+    def list_rules(self, enabled_only: bool = False) -> list[dict]:
         with get_connection() as conn:
             cursor = conn.cursor()
             sql = "SELECT * FROM detection_rules"
@@ -46,14 +45,14 @@ class RuleRepository:
             rows = cursor.fetchall()
         return [self._deserialize(row) for row in rows]
 
-    def get_rule(self, rule_id: int) -> Optional[Dict]:
+    def get_rule(self, rule_id: int) -> dict | None:
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM detection_rules WHERE id = %s", (rule_id,))
             row = cursor.fetchone()
         return self._deserialize(row) if row else None
 
-    def create_rule(self, data: Dict) -> int:
+    def create_rule(self, data: dict) -> int:
         for field in self.REQUIRED_FIELDS:
             if field not in data or data[field] in (None, ""):
                 raise ValueError(f"missing required field: {field}")
@@ -86,7 +85,7 @@ class RuleRepository:
             conn.commit()
             return cursor.lastrowid
 
-    def update_rule(self, rule_id: int, updates: Dict) -> bool:
+    def update_rule(self, rule_id: int, updates: dict) -> bool:
         fields = []
         values = []
         for key in self._WRITEABLE_FIELDS:
@@ -162,7 +161,7 @@ class RuleRepository:
         return json.dumps(value, ensure_ascii=False)
 
     @staticmethod
-    def _deserialize(row: Dict[str, Any]) -> Dict[str, Any]:
+    def _deserialize(row: dict[str, Any]) -> dict[str, Any]:
         """DB 行 → dict；rule_expr 反序列化为 dict。"""
         out = dict(row)
         raw = out.get("rule_expr")

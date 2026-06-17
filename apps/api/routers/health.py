@@ -34,7 +34,7 @@ async def doris_health_check():
     - pool: 连接池大小和可用数
     - backends: Doris 后端节点存活状态
     """
-    from apps.api.database.doris_connection import get_connection, _pool, _POOL_SIZE
+    from apps.api.database.doris_connection import _POOL_SIZE, _pool, get_connection
 
     result: dict = {
         "status": "ok",
@@ -97,6 +97,7 @@ async def doris_health_check():
     # ── 数据源库 (dwd_tolldata) ──
     try:
         import pymysql
+
         from apps.api.core import config
         src = pymysql.connect(
             host=config.DB_HOST, port=config.DB_PORT,

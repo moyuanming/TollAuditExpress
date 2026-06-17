@@ -1,10 +1,10 @@
 """后台任务调度器 — daemon 线程，定期检查到期任务并执行"""
 
+import json
+import logging
 import os
 import threading
-import logging
 import time
-import json
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -97,11 +97,15 @@ def _cleanup_stuck_executions(task_repo):
 
 def _execute_and_record(task: dict, execution_id: int):
     """执行任务并记录结果（带实时日志落库）"""
-    from apps.api.services.task_executor import (
-        execute_task, set_log_context, clear_log_context, get_log_lines,
-    )
     import logging
     import threading
+
+    from apps.api.services.task_executor import (
+        clear_log_context,
+        execute_task,
+        get_log_lines,
+        set_log_context,
+    )
 
     # 安装日志捕获 handler(仅本线程执行期间有效)
     capture = __import__(
