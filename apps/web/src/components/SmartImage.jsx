@@ -1,9 +1,26 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Icon from './Icon'
+
+const LOAD_TIMEOUT_MS = 6000
 
 function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
   const [phase, setPhase] = useState('direct') // direct | proxy | error
   const [attempt, setAttempt] = useState(0)
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    if (phase === 'error' || !imageUrl) return undefined
+    timerRef.current = setTimeout(() => {
+      if (phase === 'direct') setPhase('proxy')
+      else if (phase === 'proxy') setPhase('error')
+    }, LOAD_TIMEOUT_MS)
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [phase, attempt, imageUrl])
 
   if (!imageUrl) {
     return (
