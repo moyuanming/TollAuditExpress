@@ -35,6 +35,7 @@ function PassengerOBUMonitor() {
   })
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState(null)
   const [actionOperator, setActionOperator] = useState('admin')
   const [actionComment, setActionComment] = useState('')
 
@@ -100,9 +101,10 @@ function PassengerOBUMonitor() {
     if (selectedDetail.id && selectedDetail.gantry_records !== undefined) return
     let cancelled = false
     setDetailLoading(true)
+    setDetailError(null)
     auditApi.getSuspect(selectedDetail.id)
-      .then(data => { if (!cancelled) setSelectedDetail(data) })
-      .catch(err => { console.error('Failed to load anomaly detail:', err) })
+      .then(data => { if (!cancelled) { setSelectedDetail(data); setDetailError(null) } })
+      .catch(err => { if (!cancelled) setDetailError(err.message || '加载详情失败') })
       .finally(() => { if (!cancelled) setDetailLoading(false) })
     return () => { cancelled = true }
   }, [selectedDetail?.id])
@@ -113,6 +115,7 @@ function PassengerOBUMonitor() {
 
   function closeDetail() {
     setSelectedDetail(null)
+    setDetailError(null)
   }
 
   const pendingCount = anomalies.filter(a => a.process_status === 'UNPROCESSED').length
@@ -378,6 +381,22 @@ function PassengerOBUMonitor() {
               {detailLoading ? (
                 <div className="text-center p-4">
                   <span className="loading-spinner"></span> 加载详情中...
+                </div>
+              ) : detailError ? (
+                <div className="p-4">
+                  <div className="alert alert-danger">
+                    <span>详情加载失败:{detailError}</span>
+                  </div>
+                  <button
+                    className="btn btn-secondary mt-2"
+                    onClick={() => {
+                      setDetailError(null)
+                      // 触发重新拉取:清掉 gantry_records 标记让 effect 再跑
+                      setSelectedDetail({ ...selectedDetail, gantry_records: undefined })
+                    }}
+                  >
+                    重试
+                  </button>
                 </div>
               ) : tripForDetail && (selectedDetail.passid || selectedDetail.audit_trip_id) ? (
                 <VehicleTripDetail trip={tripForDetail} actions={actionForm} />
