@@ -177,7 +177,7 @@ function PassengerOBUMonitor() {
       <div className="page-header">
         <div className="page-title-group">
           <h2 className="page-title"><Icon name="bus" /> 客车 OBU 监测</h2>
-          <span className="page-subtitle">非新A 客车使用 OBU 介质,入口或出口图片识别为货车且 LLM 复核通过 <span className="mono text-0p65 text-tertiary ml-1">v2026-06-18-r3</span></span>
+          <span className="page-subtitle">非新A 客车使用 OBU 介质,入口或出口图片识别为货车且 LLM 复核通过</span>
         </div>
         <div className="stats-strip">
           <div className="stat-mini">
