@@ -1,43 +1,17 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import Icon from './Icon'
 
-const LOAD_TIMEOUT_MS = 3000
-
-function isPrivateHost(url) {
-  try {
-    const h = new URL(url).hostname
-    if (/^10\./.test(h)) return true
-    if (/^192\.168\./.test(h)) return true
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true
-    if (/^127\./.test(h)) return true
-    if (h === 'localhost') return true
-    return false
-  } catch (e) {
-    return false
-  }
+// Always go through the same-origin proxy. The proxy is reachable from any
+// client that can reach the app, regardless of the client's network. Skipping
+// the direct phase entirely removes the "browser sits on unreachable IP" hang.
+function proxyUrlFor(imageUrl, attempt) {
+  const ts = attempt ? `&_t=${Date.now()}` : ''
+  return `/api/audit/image-proxy?url=${encodeURIComponent(imageUrl)}${ts}`
 }
 
 function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
-  // Private/internal hosts are reached only via the proxy. Skip the direct
-  // phase entirely so we never sit on an unreachable connection.
-  const initialPhase = isPrivateHost(imageUrl || '') ? 'proxy' : 'direct'
-  const [phase, setPhase] = useState(initialPhase) // direct | proxy | error
+  const [status, setStatus] = useState('loading') // loading | loaded | error
   const [attempt, setAttempt] = useState(0)
-  const timerRef = useRef(null)
-
-  useEffect(() => {
-    if (phase === 'error' || !imageUrl) return undefined
-    timerRef.current = setTimeout(() => {
-      if (phase === 'direct') setPhase('proxy')
-      else if (phase === 'proxy') setPhase('error')
-    }, LOAD_TIMEOUT_MS)
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
-        timerRef.current = null
-      }
-    }
-  }, [phase, attempt, imageUrl])
 
   if (!imageUrl) {
     return (
@@ -48,24 +22,22 @@ function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
     )
   }
 
-  const proxyUrl = `/api/audit/image-proxy?url=${encodeURIComponent(imageUrl)}${attempt ? `&_t=${Date.now()}` : ''}`
-  const src = phase === 'direct' ? imageUrl : phase === 'proxy' ? proxyUrl : null
+  const handleError = () => {
+    setStatus('error')
+  }
 
-  const handleDirectError = () => {
-    if (phase === 'direct') {
-      setPhase('proxy')
-    } else if (phase === 'proxy') {
-      setPhase('error')
-    }
+  const handleLoad = () => {
+    setStatus('loaded')
+    if (onLoaded) onLoaded()
   }
 
   const handleRetry = (e) => {
     e.stopPropagation()
-    setAttempt(a => a + 1)
-    setPhase(isPrivateHost(imageUrl || '') ? 'proxy' : 'direct')
+    setAttempt((a) => a + 1)
+    setStatus('loading')
   }
 
-  if (phase === 'error') {
+  if (status === 'error') {
     return (
       <div className="smart-image-wrap" style={style}>
         <div className="image-error-box">
@@ -85,12 +57,19 @@ function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
 
   return (
     <div className="smart-image-wrap" style={style}>
+      {status === 'loading' && (
+        <div className="image-loading-box">
+          <span className="loading-spinner" />
+          <span className="text-0p75 text-secondary">加载中</span>
+        </div>
+      )}
       <img
-        src={src}
+        src={proxyUrlFor(imageUrl, attempt)}
         alt={alt}
         className="smart-image"
-        onLoad={() => onLoaded && onLoaded()}
-        onError={handleDirectError}
+        style={status === 'loading' ? { opacity: 0 } : undefined}
+        onLoad={handleLoad}
+        onError={handleError}
       />
     </div>
   )
