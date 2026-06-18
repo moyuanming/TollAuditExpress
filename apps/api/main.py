@@ -60,7 +60,7 @@ app.include_router(landing.router, prefix="/api/landing", tags=["landing"])
 async def root():
     index_path = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.isfile(index_path):
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers={"Cache-Control": "no-cache, must-revalidate"})
     return {"message": "TollAuditExpress API", "version": "1.0.0"}
 
 
@@ -84,7 +84,7 @@ if os.path.isdir(FRONTEND_DIR):
             return await call_next(request)
         index_path = os.path.join(FRONTEND_DIR, "index.html")
         if os.path.isfile(index_path):
-            return FileResponse(index_path)
+            return FileResponse(index_path, headers={"Cache-Control": "no-cache, must-revalidate"})
         return await call_next(request)
 
 

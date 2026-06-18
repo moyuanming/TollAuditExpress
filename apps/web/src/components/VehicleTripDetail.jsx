@@ -180,6 +180,9 @@ function LlmCompareSection({ passid, hasEntry, hasExit, initialVerdict, onVerifi
 }
 
 export default function VehicleTripDetail({ trip, actions, deepLink }) {
+  // 缺入口数据时(如新疆昭苏主线站等内网不可达的车道图片),不渲染入口 ImageBox
+  // 避免 SmartImage 通过 image-proxy 请求不可达上游导致详情页"卡住"
+  const hasEntry = !!trip.entry_vehicle_id
   return (
     <>
       {/* 决策依据：仅当存在 audit_results 时展示（按 fraud_type 逐个） */}
@@ -207,12 +210,14 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
 
           <div className="detail-subsection-title">车牌图像</div>
           <div className="image-compare">
-            <ImageBox
-              label="入口"
-              imageUrl={trip.entry_image_license}
-              status={trip.entry_image_license ? 'success' : 'pending'}
-              badge={trip.entry_image_license ? null : '无图像'}
-            />
+            {hasEntry && (
+              <ImageBox
+                label="入口"
+                imageUrl={trip.entry_image_license}
+                status={trip.entry_image_license ? 'success' : 'pending'}
+                badge={trip.entry_image_license ? null : '无图像'}
+              />
+            )}
             <ImageBox
               label="出口"
               imageUrl={trip.exit_image_license}
@@ -225,11 +230,13 @@ export default function VehicleTripDetail({ trip, actions, deepLink }) {
             <>
               <div className="detail-subsection-title mt-3">车体/侧面图像</div>
               <div className="image-compare">
-                <ImageBox
-                  label="入口"
-                  imageUrl={trip.entry_image_trans}
-                  status={trip.entry_image_trans ? 'success' : 'pending'}
-                />
+                {hasEntry && (
+                  <ImageBox
+                    label="入口"
+                    imageUrl={trip.entry_image_trans}
+                    status={trip.entry_image_trans ? 'success' : 'pending'}
+                  />
+                )}
                 <ImageBox
                   label="出口"
                   imageUrl={trip.exit_image_trans}

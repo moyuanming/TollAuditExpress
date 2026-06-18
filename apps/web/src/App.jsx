@@ -22,7 +22,7 @@ function AppNav() {
     <nav className="nav">
       <div className="nav-brand">
         <div className="nav-brand-icon"><Icon name="shield-check" size="lg" /></div>
-        <h1>高速公路收费稽核系统 <span className="mono text-0p65 text-tertiary ml-1">v2026-06-18-r4</span></h1>
+        <h1>高速公路收费稽核系统 <span className="mono text-0p65 text-tertiary ml-1">v2026-06-18-r6</span></h1>
       </div>
       <div className="nav-links">
         <NavLink to="/app" end className={({isActive}) => isActive ? "nav-link active" : "nav-link"}>
