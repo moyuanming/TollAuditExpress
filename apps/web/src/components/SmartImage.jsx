@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Icon from './Icon'
 
 // Always go through the same-origin proxy. The proxy is reachable from any
@@ -9,9 +9,28 @@ function proxyUrlFor(imageUrl, attempt) {
   return `/api/audit/image-proxy?url=${encodeURIComponent(imageUrl)}${ts}`
 }
 
+// Hard ceiling: an image that hasn't loaded or errored within this many ms
+// is treated as failed. Prevents one slow upstream from making the whole
+// detail panel feel "stuck".
+const LOAD_TIMEOUT_MS = 5000
+
 function SmartImage({ imageUrl, alt = '', style, onLoaded }) {
   const [status, setStatus] = useState('loading') // loading | loaded | error
   const [attempt, setAttempt] = useState(0)
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    if (status !== 'loading' || !imageUrl) return undefined
+    timerRef.current = setTimeout(() => {
+      setStatus('error')
+    }, LOAD_TIMEOUT_MS)
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [status, attempt, imageUrl])
 
   if (!imageUrl) {
     return (
